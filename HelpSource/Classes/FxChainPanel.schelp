@@ -1,0 +1,39 @@
+TITLE:: FxChainPanel
+summary:: a chain's effects, stacked, each with its own panel
+categories:: Libraries>ParaEQ
+related:: Classes/FxChain, Classes/FxChainGUI, Classes/ParaEQPanel, Classes/CompressorPanel
+
+DESCRIPTION::
+One strip per effect - its name, and buttons to move or drop it - over the
+effect's own panel, which is where all of its controls are. Above them the
+chain's row: on/off, its name and bus, the chain presets, and a button per
+effect class that is installed. The panel follows the chain: an effect added
+from code turns up, one removed goes away.
+
+code::
+panel = FxChainPanel(chain);
+window.layout = VLayout(panel.view, hints.view);
+panel.hints = hints;
+panel.running = true;          // the analysers, while it is showing
+panel.remove;                  // in window.onClose
+::
+
+link::Classes/ServerView:: embeds this under its counters; link::Classes/FxChainGUI::
+puts it in a window.
+
+CLASSMETHODS::
+
+METHOD:: new
+ARGUMENT:: chain
+ARGUMENT:: parent
+
+INSTANCEMETHODS::
+
+METHOD:: chain
+METHOD:: view
+METHOD:: panels
+The effects' panels, in order.
+METHOD:: running
+METHOD:: hints
+METHOD:: refresh
+METHOD:: remove

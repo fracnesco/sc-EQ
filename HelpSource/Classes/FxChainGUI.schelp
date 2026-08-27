@@ -1,0 +1,28 @@
+TITLE:: FxChainGUI
+summary:: a chain of effects in a window of its own
+categories:: Libraries>ParaEQ
+related:: Classes/FxChain, Classes/FxChainPanel
+
+DESCRIPTION::
+A link::Classes/FxChainPanel:: with a link::Classes/FxHintBar:: under it: what
+code::chain.gui:: opens.
+
+code::
+FxChain.master.gui;
+::
+
+CLASSMETHODS::
+
+METHOD:: new
+ARGUMENT:: chain
+ARGUMENT:: x
+ARGUMENT:: y
+
+INSTANCEMETHODS::
+
+METHOD:: chain
+METHOD:: window
+METHOD:: panel
+METHOD:: hints
+METHOD:: front
+METHOD:: close

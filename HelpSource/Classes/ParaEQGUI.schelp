@@ -1,0 +1,31 @@
+TITLE:: ParaEQGUI
+summary:: one eq in a window of its own
+categories:: Libraries>ParaEQ
+related:: Classes/ParaEQ, Classes/ParaEQPanel, Classes/FxHintBar
+
+DESCRIPTION::
+A link::Classes/ParaEQPanel::, a status line saying where the eq is running, and
+a link::Classes/FxHintBar:: under it. What code::eq.gui:: opens; closing it stops
+the analyser and leaves the eq itself untouched.
+
+code::
+e = ParaEQ.onBus(0, 2);
+e.gui;                        // or ParaEQGUI(e)
+e.guiObj.close;
+::
+
+CLASSMETHODS::
+
+METHOD:: new
+ARGUMENT:: eq
+ARGUMENT:: x
+ARGUMENT:: y
+
+INSTANCEMETHODS::
+
+METHOD:: eq
+METHOD:: window
+METHOD:: panel
+METHOD:: hints
+METHOD:: front
+METHOD:: close

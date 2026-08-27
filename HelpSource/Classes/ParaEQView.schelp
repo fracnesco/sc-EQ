@@ -1,0 +1,72 @@
+TITLE:: ParaEQView
+summary:: the response curve of an eq, and its handles
+categories:: Libraries>ParaEQ
+related:: Classes/ParaEQ, Classes/ParaEQPanel, Classes/ParaEQSpectrum
+
+DESCRIPTION::
+The five bands as five dots on a frequency / gain plane, over the curve they add
+up to, each band's own share filled under it. Behind them, when the view has
+been given a link::Classes/ParaEQSpectrum::, the spectrum of what the eq is
+working on. This is the middle of link::Classes/ParaEQPanel::; a window that
+wants only the curve can make one on its own.
+
+code::
+v = ParaEQView(parent);
+v.eq = someParaEQ;
+v.spectrum = ParaEQSpectrum(someParaEQ);
+::
+
+definitionList::
+## drag || frequency and gain of the nearest band - a dot never has to be hit exactly
+## cmd + drag up / down || the width of the emphasis::selected:: band, from wherever you press. code::alt:: does the same
+## the wheel || the width again
+## shift while dragging || snap to round frequencies, whole dB, round widths
+## double click a dot || that band back to 0 dB
+::
+
+The width drag is relative - it starts from the width the band already has
+rather than from where the mouse landed - so it never jumps on the first pixel.
+
+The curve is worked out from the same coefficients the server runs, see
+link::Classes/ParaEQ#*coeffs::, and kept between redraws: with an analyser
+running the view redraws twenty times a second.
+
+CLASSMETHODS::
+
+METHOD:: new
+ARGUMENT:: parent
+ARGUMENT:: bounds
+
+METHOD:: grabRadius
+How near a dot a double click has to land. 10.
+
+METHOD:: widthPerPixel
+How much of the width one pixel of a cmd drag is worth. 1.02.
+
+METHOD:: freqSnap
+METHOD:: shelfQSnap
+METHOD:: peakQSnap
+What shift snaps to.
+
+METHOD:: isWidthMod
+Which modifier keys mean "width, not position".
+
+INSTANCEMETHODS::
+
+METHOD:: view
+The link::Classes/UserView::.
+
+METHOD:: eq
+The link::Classes/ParaEQ:: drawn.
+
+METHOD:: spectrum
+A link::Classes/ParaEQSpectrum::, or nil for the curve alone.
+
+METHOD:: selected
+The band being worked on. Setting it from outside reaches the panel's number
+boxes too.
+
+METHOD:: action
+Called with the view and code::\select:: when the selection changes.
+
+METHOD:: refresh

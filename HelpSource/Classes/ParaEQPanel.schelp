@@ -1,0 +1,67 @@
+TITLE:: ParaEQPanel
+summary:: an eq's controls as one view
+categories:: Libraries>ParaEQ
+related:: Classes/ParaEQ, Classes/ParaEQGUI, Classes/ParaEQView, Classes/ParaEQSpectrum, Classes/FxHintBar
+
+DESCRIPTION::
+What every window that shows an eq is built from: the eq's own window, the
+compressor's sidechain page, the master chain in ServerView, the module family's
+eq tab.
+
+code::
+ [x] eq on  [x] spectrum  preset [warm v] [flat]  [name   ][save][delete]   [copy][paste]
+ +------------------------------------------------------------------------------+
+ |  the curve, five handles, the analysis behind them                           |
+ +------------------------------------------------------------------------------+
+ [low shelf][peak 1][peak 2][peak 3][high shelf]  freq [ 80] dB [-6.0] q [0.80]
+::
+
+It follows one link::Classes/ParaEQ:: and can be pointed at another, which is
+how a module window shows the eq of whichever pad is selected:
+
+code::
+panel = ParaEQPanel(eq);
+window.layout = VLayout(panel.view, hints.view);
+panel.hints = hints;          // labels every control
+panel.running = true;         // the analysis, while the panel is showing
+panel.eq = otherEq;
+panel.remove;                 // in window.onClose
+::
+
+CLASSMETHODS::
+
+METHOD:: new
+ARGUMENT:: eq
+ARGUMENT:: parent
+ARGUMENT:: subject
+What the hints call the thing being shaped - "this pad", "the sidechain".
+ARGUMENT:: showOnBox
+code::false:: leaves the on switch out, for a window that has one of its own.
+
+INSTANCEMETHODS::
+
+METHOD:: eq
+The eq shown. The view, the analyser and the boxes all follow it.
+
+METHOD:: view
+The panel.
+
+METHOD:: eqView
+The link::Classes/ParaEQView:: in the middle.
+
+METHOD:: spectrum
+The link::Classes/ParaEQSpectrum:: behind the curve.
+
+METHOD:: running
+Whether the analysis runs. A window sets it while the panel is showing.
+
+METHOD:: hints
+A link::Classes/FxHintBar:: to label every control.
+
+METHOD:: selected
+The band the boxes are on.
+
+METHOD:: refresh
+
+METHOD:: remove
+Stops listening to the eq and frees the analyser. In the window's onClose.

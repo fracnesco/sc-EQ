@@ -1,0 +1,293 @@
+TITLE:: ParaEQ
+summary:: a five band parametric eq, as a UGen and as an object that drives it
+categories:: Libraries>ParaEQ
+related:: Classes/FxUnit, Classes/FxChain, Classes/ParaEQGUI, Classes/ParaEQPanel, Classes/ParaEQView, Classes/ParaEQSpectrum, Classes/ModuleEQ, Classes/BLowShelf, Classes/BPeakEQ, Classes/BHiShelf
+
+DESCRIPTION::
+Five biquads in series - low shelf, three peaks, high shelf - each band a
+code::[freq, dB, q]:: triple. The filter is one pseudo-UGen, link::#*ar::, so it
+runs wherever a UGen does; and an instance of this class drives it wherever it
+runs: a control on an Ndef or a Synth, a node of its own on a bus, or a place in
+an link::Classes/FxChain::.
+
+code::
+s.boot;
+Ndef(\pad, { var sig = Saw.ar([110, 110.7]) * 0.1; ParaEQ.ar(sig, \eq) }).play;
+
+e = ParaEQ(Ndef(\pad), \eq);      // drives that Ndef's \eq control
+e.gui;
+e.preset = \telephone;
+e.setBand(0, 80, -9, 0.8);        // low shelf, 80 Hz, -9 dB, rs 0.8
+::
+
+The same object with a node of its own, in place on a bus:
+
+code::
+e = ParaEQ.onBus(0, 2);
+e.enabled = true;
+::
+
+Everything about how it is driven - targets, buses, chains, what
+code::enabled:: does in each case - is link::Classes/FxUnit::'s and documented
+there. This file is about the eq.
+
+subsection:: Bands
+
+A band is code::[freq, dB, q]::, numbered 0 to 4. code::q:: is an code::rs:: on
+the two shelves and an code::rq:: on the three peaks - smaller is narrower - and
+the floor differs accordingly: 0.6 for a shelf, 0.05 for a peak. Gain is clipped
+to ± link::#*dbRange::, frequency to link::#*minFreq:: .. link::#*maxFreq::.
+Inside those limits the filters stay well behaved.
+
+Changes reach the node immediately and are lagged there by link::#*lag::
+seconds, so dragging a handle is a slide rather than a step.
+
+subsection:: The curve is the filter
+
+link::#-responseAt:: works the dB curve out from the same coefficients the
+server runs - link::#*coeffs:: is the BEQSuite arithmetic in numbers - so the
+window draws the filter you hear, not a sketch of it. That is the one thing this
+class has to get right: change link::#*ar:: and link::#*coeffs:: together.
+
+subsection:: Presets and the clipboard
+
+Every eq shares one preset list - see link::#*presetNames:: - and one clipboard,
+so a curve saved on an Ndef's eq is in the menu of a OneShot pad's, and a curve
+copied on a pad pastes onto the master chain's. Your own presets are kept in
+link::#*presetFile::, in the support folder rather than the repository.
+
+CLASSMETHODS::
+
+METHOD:: ar
+The filter, as a UGen.
+
+ARGUMENT:: in
+The signal, any number of channels.
+
+ARGUMENT:: name
+The control the bands arrive on: fifteen numbers, code::[freq, q, dB]:: per band,
+made with link::Classes/NamedControl::. A second control, code::name:: with
+code::On:: appended, crossfades the whole thing to dry.
+
+ARGUMENT:: bypass
+code::false:: leaves the code::On:: control out, for a node that is freed rather
+than switched - what link::#*synthDef:: and ModuleCommon's slot def do.
+
+ARGUMENT:: lag
+Seconds the bands are lagged by; link::#*lag:: if left out.
+
+RETURNS:: The filtered signal, through link::Classes/Sanitize::.
+
+METHOD:: new
+Drive a control on a node. See link::Classes/FxUnit#*new::.
+
+ARGUMENT:: target
+An Ndef, a Synth, a Group - anything that answers to code::set:: - or nil for an
+eq something else pushes.
+
+ARGUMENT:: controlName
+code::\eq:: by default.
+
+METHOD:: onBus
+A node of its own, in place on a bus. See link::Classes/FxUnit#*onBus::.
+
+METHOD:: defName
+METHOD:: synthDef
+The in place synth for a channel count: code::In:: - link::#*ar:: - code::XOut::
+under an envelope, so switching in and out leaves the dry signal rather than
+silence.
+
+METHOD:: numBands
+5.
+
+METHOD:: bandNames
+code::["low shelf", "peak 1", "peak 2", "peak 3", "high shelf"]::.
+
+METHOD:: bandName
+The name of one band.
+
+METHOD:: bandTypes
+code::\lowShelf::, code::\peak:: ×3, code::\hiShelf::.
+
+METHOD:: isShelf
+Whether a band index is one of the two shelves.
+
+METHOD:: qLo
+METHOD:: qHi
+The width limits for a band: 0.6 or 0.05 at the bottom, 10 at the top.
+
+METHOD:: defaultBands
+A fresh copy of the flat setting.
+
+METHOD:: dbRange
+How far a band may be pushed either way, and the range the curve is drawn over.
+24 by default.
+
+METHOD:: minFreq
+METHOD:: maxFreq
+20 and 20000 by default.
+
+METHOD:: lag
+How quickly the filters follow a change, in seconds. 0.1 by default.
+
+METHOD:: fade
+How long a node of its own takes to fade in and out when it is switched. 0.02.
+
+METHOD:: presetNames
+Every preset, the ones the library ships first: code::\flat::, code::'rumble
+cut'::, code::\warm::, code::\bright::, code::\distant::, code::\loudness::,
+code::\telephone::, then yours.
+
+METHOD:: presets
+METHOD:: userPresets
+METHOD:: allPresets
+The same as code::name, bands, name, bands...::.
+
+METHOD:: presetBands
+A copy of one preset's bands, or nil.
+
+METHOD:: isUserPreset
+Whether a name is yours, and so can be written over or dropped.
+
+METHOD:: addPreset
+Keep a curve under a name. It joins the menu of every window and is written to
+link::#*presetFile::. A name the library ships is refused, and so is a curve that
+is not five bands long. Answers the name, or nil.
+
+code::
+ParaEQ.addPreset(\scooped,
+    [[80, 3, 0.8], [250, 0, 1], [900, -8, 1.2], [3500, 0, 1], [8000, 4, 0.8]]);
+::
+
+METHOD:: removePreset
+Drop one of yours.
+
+METHOD:: clearUserPresets
+Drop all of yours, on disk as well.
+
+METHOD:: presetFile
+Where your presets are kept - code::paraeq-presets.scd:: in
+link::Classes/Platform#*userAppSupportDir::. Settable. ModuleEQ's older
+code::module-eq-presets.scd:: is read once if this one does not exist yet.
+
+METHOD:: presetStore
+The link::Classes/FxPresetStore:: behind all of the above.
+
+METHOD:: clipboard
+The curve link::#-copyBands:: last put aside, or nil.
+
+METHOD:: hasClipboard
+Whether there is anything to paste.
+
+METHOD:: coeffs
+One biquad as code::[a0, a1, a2, b1, b2]:: - the shape BEQSuite hands the
+server, in numbers.
+
+ARGUMENT:: type
+code::\lowShelf::, code::\peak:: or code::\hiShelf::.
+ARGUMENT:: sr
+ARGUMENT:: freq
+ARGUMENT:: q
+ARGUMENT:: db
+
+METHOD:: magnitudes
+code::|H(e^jw)|:: of one set of coefficients at every frequency in an Array.
+
+METHOD:: flatControls
+The node's default: fifteen numbers, flat.
+
+INSTANCEMETHODS::
+
+METHOD:: bands
+The five code::[freq, dB, q]:: triples. Setting takes a list of them and pushes
+all five at once.
+
+METHOD:: setBand
+Move one band. nil leaves that part of it where it was.
+
+ARGUMENT:: i
+0..4.
+ARGUMENT:: freq
+ARGUMENT:: db
+ARGUMENT:: q
+
+METHOD:: freqAt
+METHOD:: dbAt
+METHOD:: qAt
+One part of one band, with a two argument setter each: code::dbAt_(4, 3)::.
+
+METHOD:: flat
+Every band back to flat.
+
+METHOD:: preset
+Set the bands from a preset, by name.
+
+METHOD:: presetName
+The preset these bands are, or nil once you have moved one.
+
+METHOD:: saveAsPreset
+Keep this curve under a name - link::#*addPreset::.
+
+METHOD:: copyBands
+METHOD:: pasteBands
+The shared clipboard. Only the curve moves, not whether the eq is on.
+
+METHOD:: copyFrom
+The same straight from another eq.
+
+METHOD:: responseAt
+The dB curve of every band over an Array of frequencies. Sum them for the curve
+you hear.
+
+METHOD:: controls
+What the node is given: fifteen numbers, code::[freq, q, dB]:: per band.
+
+METHOD:: settings
+The bands, for a preset or the clipboard - link::Classes/FxUnit#-settings::.
+
+METHOD:: asDict
+METHOD:: fromDict
+code::(enabled:, bands:):: - the shape ModuleCommon's kits and sets have always
+written.
+
+METHOD:: sampleRate
+The server's, when it is up - what the curve is worked out at.
+
+METHOD:: enabled
+METHOD:: gui
+METHOD:: panel
+METHOD:: target
+METHOD:: chain
+METHOD:: synth
+See link::Classes/FxUnit::.
+
+EXAMPLES::
+
+code::
+s.boot;
+
+// in a graph
+Ndef(\pad, { var sig = Saw.ar([110, 110.7]) * 0.1; ParaEQ.ar(sig, \eq) }).play;
+e = ParaEQ(Ndef(\pad), \eq);
+e.gui;
+e.preset = \loudness;
+e.setBand(0, 60, -18, 0.8);       // lose the rumble
+e.dbAt_(4, 4);                    // put some air back
+e.enabled = false;                // dry, crossfaded
+e.enabled = true;
+
+// kept, and carried
+e.saveAsPreset("my room");
+e.copyBands;
+
+// on the main out, in place
+m = ParaEQ.onBus(0, 2);
+m.enabled = true;
+m.pasteBands;
+m.gui;
+
+m.free;
+e.free;
+Ndef(\pad).clear;
+ParaEQ.removePreset("my room");
+::
