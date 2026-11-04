@@ -345,12 +345,19 @@ FxChain {
 
 	// ----------------------------------------------------------------- gui
 
+	// The window, made once and brought to the front after that. Both ways
+	// round announce `\gui`, so a button somewhere else that opens this
+	// window - ServerView's `fx` - knows whether it is up without having to
+	// ask.
 	gui { |x, y|
 		if (guiObj.isNil) { guiObj = FxChainGUI(this, x, y) } { guiObj.front };
+		this.changed(\gui);
 		^guiObj
 	}
 
-	prGuiClosed { guiObj = nil }
+	closeGui { guiObj !? (_.close) }
+
+	prGuiClosed { guiObj = nil; this.changed(\gui) }
 
 	panel { |parent| ^FxChainPanel(this, parent) }
 

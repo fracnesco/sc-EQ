@@ -1,14 +1,16 @@
 TITLE:: ParaEQ
-summary:: a five band parametric eq, as a UGen and as an object that drives it
+summary:: a five band parametric eq with a high pass and a low pass, as a UGen and as an object that drives it
 categories:: Libraries>ParaEQ
-related:: Classes/FxUnit, Classes/FxChain, Classes/ParaEQGUI, Classes/ParaEQPanel, Classes/ParaEQView, Classes/ParaEQSpectrum, Classes/ModuleEQ, Classes/BLowShelf, Classes/BPeakEQ, Classes/BHiShelf
+related:: Classes/FxUnit, Classes/FxChain, Classes/ParaEQGUI, Classes/ParaEQPanel, Classes/ParaEQView, Classes/ParaEQSpectrum, Classes/ModuleEQ, Classes/BLowShelf, Classes/BPeakEQ, Classes/BHiShelf, Classes/BLowPass, Classes/BHiPass
 
 DESCRIPTION::
 Five biquads in series - low shelf, three peaks, high shelf - each band a
-code::[freq, dB, q]:: triple. The filter is one pseudo-UGen, link::#*ar::, so it
-runs wherever a UGen does; and an instance of this class drives it wherever it
-runs: a control on an Ndef or a Synth, a node of its own on a bus, or a place in
-an link::Classes/FxChain::.
+code::[freq, dB, q]:: triple, and either end of the spectrum cut away as well
+when you ask for it: a high pass and a low pass, both out until they are
+switched in. The filter is one pseudo-UGen, link::#*ar::, so it runs wherever a
+UGen does; and an instance of this class drives it wherever it runs: a control
+on an Ndef or a Synth, a node of its own on a bus, or a place in an
+link::Classes/FxChain::.
 
 code::
 s.boot;
@@ -31,7 +33,7 @@ Everything about how it is driven - targets, buses, chains, what
 code::enabled:: does in each case - is link::Classes/FxUnit::'s and documented
 there. This file is about the eq.
 
-subsection:: Bands
+subsection:: Bands and cuts
 
 A band is code::[freq, dB, q]::, numbered 0 to 4. code::q:: is an code::rs:: on
 the two shelves and an code::rq:: on the three peaks - smaller is narrower - and
@@ -39,14 +41,53 @@ the floor differs accordingly: 0.6 for a shelf, 0.05 for a peak. Gain is clipped
 to ± link::#*dbRange::, frequency to link::#*minFreq:: .. link::#*maxFreq::.
 Inside those limits the filters stay well behaved.
 
+After the bands come the two cuts, and the window numbers them all together:
+seven strong::handles::, 0 to 6, which is the number every method here that
+takes an code::i:: wants.
+
+table::
+## strong::i:: || strong::what:: || strong::held as::
+## 0 .. 4 || low shelf, peak 1, peak 2, peak 3, high shelf || code::[freq, dB, q]::
+## 5 || high pass - link::#*highPass:: || code::[freq, rq, in]::
+## 6 || low pass - link::#*lowPass:: || code::[freq, rq, in]::
+::
+
+A cut has no gain: it is a switch, and both cuts are out until you switch one
+in, so an eq that has never been told about them is the eq it always was.
+code::rq:: defaults to 1.414 - the flattest a cut goes, 3 dB down at its own
+frequency and no bump before it - and goes down to link::#*cutQLo::, where the
+corner is a resonant peak. Out, a cut is out however its frequency has been
+left.
+
+Each cut has a slope, how hard it cuts: 6 to 96 dB per octave in steps of 6, 12
+unless you say otherwise, and a value between steps goes to the nearest one. A
+filter only comes in whole orders, 6 dB per octave each, and every one of them here
+is a Butterworth filter 3 dB down at the corner, so a step only changes how hard it
+falls away. 12 is one biquad, the filter the cuts always were. Nothing fades when
+the slope changes, so moving it on a playing sound can click. At 6 there is no
+biquad for code::rq:: to work on; above it, code::rq:: works on the narrowest stage.
+Very steep slopes ring at the corner.
+
+code::
+e = ParaEQ.onBus(0, 2);
+e.enabled = true;
+e.highPassOn = true;              // the rumble gone
+e.highPassFreq = 60;
+e.highPassSlope = 48;             // and hard
+e.lowPassOn = true; e.lowPassFreq = 12000;
+e.cutOn_(ParaEQ.highPass, false); // and back out
+e.free;
+::
+
 Changes reach the node immediately and are lagged there by link::#*lag::
-seconds, so dragging a handle is a slide rather than a step.
+seconds, so dragging a handle is a slide rather than a step - and switching a
+cut in is a fade over the same time rather than a click.
 
 subsection:: The curve is the filter
 
 link::#-responseAt:: works the dB curve out from the same coefficients the
-server runs - link::#*coeffs:: is the BEQSuite arithmetic in numbers - so the
-window draws the filter you hear, not a sketch of it. That is the one thing this
+server runs - link::#*coeffs:: is the BEQSuite arithmetic in numbers, and
+link::#*cutCoeffs:: the stages of a cut at its slope - so the window draws the filter you hear, not a sketch of it. That is the one thing this
 class has to get right: change link::#*ar:: and link::#*coeffs:: together.
 
 subsection:: Presets and the clipboard
@@ -66,8 +107,16 @@ The signal, any number of channels.
 
 ARGUMENT:: name
 The control the bands arrive on: fifteen numbers, code::[freq, q, dB]:: per band,
-made with link::Classes/NamedControl::. A second control, code::name:: with
-code::On:: appended, crossfades the whole thing to dry.
+made with link::Classes/NamedControl::. Two more go with it: code::name:: with
+code::Cut:: appended carries the two cuts, code::[freq, rq, in]:: each,
+code::name:: with code::Slope:: appended their two slopes, and
+code::name:: with code::On:: appended crossfades the whole thing to dry. A node
+built before the cuts existed still takes the bands, since they travel on a
+control of their own.
+
+A stereo eq is about 200 UGens and 11 KB of def, because a graph holds everything
+the steepest slope needs, whatever the slope is. Measured on a stock server: 51 KB
+of real time memory and 0.36% of a core per stereo eq.
 
 ARGUMENT:: bypass
 code::false:: leaves the code::On:: control out, for a node that is freed rather
@@ -98,26 +147,54 @@ under an envelope, so switching in and out leaves the dry signal rather than
 silence.
 
 METHOD:: numBands
-5.
+5 - the parametric bands.
+
+METHOD:: numCuts
+2 - the high pass and the low pass.
+
+METHOD:: numHandles
+7 - the bands and the cuts together, which is what a window shows and what an
+code::i:: counts through.
+
+METHOD:: isCut
+Whether a handle index is one of the two cuts.
+
+METHOD:: highPass
+METHOD:: lowPass
+Their handle indices: 5 and 6.
 
 METHOD:: bandNames
 code::["low shelf", "peak 1", "peak 2", "peak 3", "high shelf"]::.
 
+METHOD:: cutNames
+code::["high pass", "low pass"]::.
+
 METHOD:: bandName
-The name of one band.
+The name of one handle, cuts included.
 
 METHOD:: bandTypes
 code::\lowShelf::, code::\peak:: ×3, code::\hiShelf::.
 
+METHOD:: cutTypes
+code::\hiPass::, code::\loPass::.
+
 METHOD:: isShelf
-Whether a band index is one of the two shelves.
+Whether a handle index is one of the two shelves.
 
 METHOD:: qLo
 METHOD:: qHi
-The width limits for a band: 0.6 or 0.05 at the bottom, 10 at the top.
+The width limits for a handle: 0.6 for a shelf, 0.05 for a peak,
+link::#*cutQLo:: for a cut, 10 at the top for all of them.
+
+METHOD:: cutQLo
+How narrow a cut may be made. 0.1 by default; below that the corner is a whistle
+rather than a filter.
 
 METHOD:: defaultBands
-A fresh copy of the flat setting.
+METHOD:: defaultCuts
+METHOD:: flatSettings
+A fresh copy of the flat setting: the five bands, the two cuts, or both
+together.
 
 METHOD:: dbRange
 How far a band may be pushed either way, and the range the curve is drawn over.
@@ -152,11 +229,14 @@ Whether a name is yours, and so can be written over or dropped.
 METHOD:: addPreset
 Keep a curve under a name. It joins the menu of every window and is written to
 link::#*presetFile::. A name the library ships is refused, and so is a curve that
-is not five bands long. Answers the name, or nil.
+is neither seven handles long - the bands with the two cuts after them, which is
+what link::#-settings:: hands you - nor the five bands alone, which is what a
+preset saved before the cuts existed holds. Answers the name, or nil.
 
 code::
 ParaEQ.addPreset(\scooped,
     [[80, 3, 0.8], [250, 0, 1], [900, -8, 1.2], [3500, 0, 1], [8000, 4, 0.8]]);
+ParaEQ.removePreset(\scooped);
 ::
 
 METHOD:: removePreset
@@ -184,7 +264,8 @@ One biquad as code::[a0, a1, a2, b1, b2]:: - the shape BEQSuite hands the
 server, in numbers.
 
 ARGUMENT:: type
-code::\lowShelf::, code::\peak:: or code::\hiShelf::.
+code::\lowShelf::, code::\peak::, code::\hiShelf::, code::\hiPass:: or
+code::\loPass::.
 ARGUMENT:: sr
 ARGUMENT:: freq
 ARGUMENT:: q
@@ -193,20 +274,68 @@ ARGUMENT:: db
 METHOD:: magnitudes
 code::|H(e^jw)|:: of one set of coefficients at every frequency in an Array.
 
+METHOD:: cutCoeffs
+The stages of one cut at a slope, as a list of what link::#*coeffs:: answers, the
+first-order ones with no third term. The product of their link::#*magnitudes:: is
+the cut.
+
+ARGUMENT:: type
+code::\hiPass:: or code::\loPass::.
+ARGUMENT:: sr
+The sample rate.
+ARGUMENT:: freq
+The corner, in Hz.
+ARGUMENT:: rq
+The cut's rq.
+ARGUMENT:: slope
+In dB per octave, taken to the nearest step.
+
+METHOD:: defaultSlope
+METHOD:: slopeStep
+METHOD:: slopeLo
+METHOD:: slopeHi
+METHOD:: slopes
+A cut's slope in dB per octave: 12 unless told otherwise, from 6 to 96 in steps of
+6. code::slopes:: is all of them, as an Array.
+
+METHOD:: nearestSlope
+The step a value is nearest to.
+
+ARGUMENT:: v
+A number of dB per octave.
+
 METHOD:: flatControls
-The node's default: fifteen numbers, flat.
+METHOD:: flatCutControls
+METHOD:: flatSlopeControls
+The node's defaults: fifteen numbers, flat, the six the cuts arrive on with both
+of them out, and the two slopes.
+
+METHOD:: cutName
+The name of the control the cuts arrive on, from the name the bands do:
+code::ParaEQ.cutName(\eq):: is code::\eqCut::.
+
+METHOD:: slopeName
+The same for the slopes: code::ParaEQ.slopeName(\eq):: is code::\eqSlope::.
 
 INSTANCEMETHODS::
 
 METHOD:: bands
 The five code::[freq, dB, q]:: triples. Setting takes a list of them and pushes
-all five at once.
+all five at once; a list of seven carries the two cuts after them, which is what
+link::#-settings:: and a preset hold, and a list of five leaves the cuts where
+they are.
+
+METHOD:: cuts
+The two code::[freq, rq, in]:: triples, high pass first, with the slope as a
+fourth number on a cut whose slope is not the default. Setting takes a list of
+them, and a cut with no slope in it goes back to the default.
 
 METHOD:: setBand
-Move one band. nil leaves that part of it where it was.
+Move one handle. nil leaves that part of it where it was. code::db:: is ignored
+on a cut, which has none - link::#-cutOn:: is what a cut has in its place.
 
 ARGUMENT:: i
-0..4.
+0..6 - see link::#Bands and cuts::.
 ARGUMENT:: freq
 ARGUMENT:: db
 ARGUMENT:: q
@@ -214,10 +343,39 @@ ARGUMENT:: q
 METHOD:: freqAt
 METHOD:: dbAt
 METHOD:: qAt
-One part of one band, with a two argument setter each: code::dbAt_(4, 3)::.
+One part of one handle, with a two argument setter each: code::dbAt_(4, 3)::. A
+cut has no gain, so its dB reads 0 and setting it does nothing.
+
+METHOD:: slopeAt
+How hard the cut at that handle index cuts, in dB per octave, with a two argument
+setter: code::slopeAt_(5, 48)::. nil on a band, and setting it on one does nothing.
+code::highPassSlope:: and code::lowPassSlope:: are the same two under their own
+names.
+
+METHOD:: cutOn
+Whether the cut at that handle index is in. A band always is, so this answers
+true for one and setting it on one does nothing.
+
+code::
+e = ParaEQ.new;
+e.cutOn(ParaEQ.highPass);         // -> false
+e.cutOn_(ParaEQ.highPass, true);
+e.toggleCut(ParaEQ.highPass);
+::
+
+METHOD:: toggleCut
+That cut in if it was out, out if it was in.
+
+METHOD:: highPassOn
+METHOD:: highPassFreq
+METHOD:: highPassQ
+METHOD:: lowPassOn
+METHOD:: lowPassFreq
+METHOD:: lowPassQ
+The same two cuts under their own names, a setter each.
 
 METHOD:: flat
-Every band back to flat.
+Every band back to flat and both cuts out - the whole eq doing nothing.
 
 METHOD:: preset
 Set the bands from a preset, by name.
@@ -236,19 +394,27 @@ METHOD:: copyFrom
 The same straight from another eq.
 
 METHOD:: responseAt
-The dB curve of every band over an Array of frequencies. Sum them for the curve
-you hear.
+The dB curve of every handle over an Array of frequencies - the five bands, then
+the two cuts, each of those flat while it is out. Sum them for the curve you
+hear.
 
 METHOD:: controls
-What the node is given: fifteen numbers, code::[freq, q, dB]:: per band.
+METHOD:: cutControls
+What the node is given: fifteen numbers, code::[freq, q, dB]:: per band, and six
+more, code::[freq, rq, in]:: per cut, on the control link::#-cutName:: answers.
+
+METHOD:: cutName
+The control the cuts arrive on: code::\eqCut:: for an eq driving code::\eq::.
 
 METHOD:: settings
-The bands, for a preset or the clipboard - link::Classes/FxUnit#-settings::.
+The five bands and the two cuts after them, for a preset or the clipboard -
+link::Classes/FxUnit#-settings::.
 
 METHOD:: asDict
 METHOD:: fromDict
-code::(enabled:, bands:):: - the shape ModuleCommon's kits and sets have always
-written.
+code::(enabled:, bands:, cuts:):: - the shape ModuleCommon's kits and sets have
+always written, with the cuts alongside it. One written before the cuts existed
+has no code::cuts:: and reads back as an eq with both of them out.
 
 METHOD:: sampleRate
 The server's, when it is up - what the curve is worked out at.
@@ -275,6 +441,14 @@ e.setBand(0, 60, -18, 0.8);       // lose the rumble
 e.dbAt_(4, 4);                    // put some air back
 e.enabled = false;                // dry, crossfaded
 e.enabled = true;
+
+// either end taken off
+e.highPassOn = true;
+e.highPassFreq = 80;              // nothing under 80 Hz
+e.lowPassOn = true;
+e.lowPassFreq = 9000;
+e.lowPassQ = 0.4;                 // narrow enough to ring at the corner
+e.flat;                           // bands flat, both cuts out again
 
 // kept, and carried
 e.saveAsPreset("my room");

@@ -1,14 +1,17 @@
 TITLE:: ParaEQView
-summary:: the response curve of an eq, and its handles
+summary:: the response curve of an eq, its band handles and its two cuts
 categories:: Libraries>ParaEQ
 related:: Classes/ParaEQ, Classes/ParaEQPanel, Classes/ParaEQSpectrum
 
 DESCRIPTION::
 The five bands as five dots on a frequency / gain plane, over the curve they add
-up to, each band's own share filled under it. Behind them, when the view has
-been given a link::Classes/ParaEQSpectrum::, the spectrum of what the eq is
-working on. This is the middle of link::Classes/ParaEQPanel::; a window that
-wants only the curve can make one on its own.
+up to, each band's own share filled under it, and after them the two cuts - the
+high pass marked strong::H::, the low pass strong::L:: - as two more dots on the
+flat line. A cut that is out is drawn as a ring rather than a dot: still there
+to take hold of, and saying at a glance that it is doing nothing. Behind them,
+when the view has been given a link::Classes/ParaEQSpectrum::, the spectrum of
+what the eq is working on. This is the middle of link::Classes/ParaEQPanel::; a
+window that wants only the curve can make one on its own.
 
 code::
 v = ParaEQView(parent);
@@ -21,8 +24,11 @@ definitionList::
 ## cmd + drag up / down || the width of the emphasis::selected:: band, from wherever you press. code::alt:: does the same
 ## the wheel || the width again
 ## shift while dragging || snap to round frequencies, whole dB, round widths
-## double click a dot || that band back to 0 dB
+## double click a dot || that band back to 0 dB - or, on one of the two cuts, in and out
 ::
+
+A cut has no gain, so dragging one moves it along the frequency axis alone and
+the height of the mouse means nothing to it.
 
 The width drag is relative - it starts from the width the band already has
 rather than from where the mouse landed - so it never jumps on the first pixel.
@@ -51,6 +57,10 @@ What shift snaps to.
 METHOD:: isWidthMod
 Which modifier keys mean "width, not position".
 
+METHOD:: handleLabel
+What a handle is marked with: the bands numbered 1 to 5, the cuts lettered
+code::"H":: and code::"L"::.
+
 INSTANCEMETHODS::
 
 METHOD:: view
@@ -63,8 +73,8 @@ METHOD:: spectrum
 A link::Classes/ParaEQSpectrum::, or nil for the curve alone.
 
 METHOD:: selected
-The band being worked on. Setting it from outside reaches the panel's number
-boxes too.
+The handle being worked on, 0 to link::Classes/ParaEQ#*numHandles:: - 1. Setting
+it from outside reaches the panel's number boxes too.
 
 METHOD:: action
 Called with the view and code::\select:: when the selection changes.

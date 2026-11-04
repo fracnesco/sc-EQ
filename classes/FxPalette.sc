@@ -34,14 +34,18 @@ FxPalette {
 		clip     = Color(0.95, 0.35, 0.30);
 		peak     = Color(0.95, 0.96, 0.98);
 
-		// the eq bands read left to right, so the colour says which end of
-		// the spectrum a handle belongs to before you have read its name
+		// The eq bands read left to right, so the colour says which end of
+		// the spectrum a handle belongs to before you have read its name.
+		// After them the two cuts, in colours off that sweep, since they
+		// take away rather than lift.
 		eqBands  = [
 			Color(0.42, 0.76, 0.95),
 			Color(0.40, 0.86, 0.80),
 			Color(0.60, 0.88, 0.48),
 			Color(0.95, 0.82, 0.36),
-			Color(0.98, 0.65, 0.20)
+			Color(0.98, 0.65, 0.20),
+			Color(0.72, 0.60, 0.95),
+			Color(0.95, 0.52, 0.74)
 		];
 	}
 

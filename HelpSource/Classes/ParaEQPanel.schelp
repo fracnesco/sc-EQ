@@ -11,10 +11,16 @@ eq tab.
 code::
  [x] eq on  [x] spectrum  preset [warm v] [flat]  [name   ][save][delete]   [copy][paste]
  +------------------------------------------------------------------------------+
- |  the curve, five handles, the analysis behind them                           |
+ |  the curve, seven handles, the analysis behind them                          |
  +------------------------------------------------------------------------------+
- [low shelf][peak 1][peak 2][peak 3][high shelf]  freq [ 80] dB [-6.0] q [0.80]
+ [low shelf][peak 1][peak 2][peak 3][high shelf][high pass][low pass]
+                              freq [ 80] dB [-6.0] q [0.80] [x] in
 ::
+
+The last two handles are the cuts. code::in:: is their switch and the one
+control in the row that only they have: a band is always in, and it is its gain
+that says what it does. The dB box greys out while a cut is selected, since a
+cut has no gain.
 
 It follows one link::Classes/ParaEQ:: and can be pointed at another, which is
 how a module window shows the eq of whichever pad is selected:
@@ -59,7 +65,7 @@ METHOD:: hints
 A link::Classes/FxHintBar:: to label every control.
 
 METHOD:: selected
-The band the boxes are on.
+The handle the boxes are on - one of the five bands, or one of the two cuts.
 
 METHOD:: refresh
 

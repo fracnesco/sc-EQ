@@ -3,9 +3,16 @@
 //
 //   [x] on  [x] spectrum  preset [warm v] [flat]  [name   ][save][delete]   [copy][paste]
 //   +------------------------------------------------------------------------+
-//   |  the curve, five handles, the analysis behind them                     |
+//   |  the curve, seven handles, the analysis behind them                    |
 //   +------------------------------------------------------------------------+
-//   [low shelf][peak 1][peak 2][peak 3][high shelf]  freq [ 80] dB [-6.0] q [0.80]
+//   [low shelf][peak 1][peak 2][peak 3][high shelf][high pass][low pass]
+//                     freq [ 80] dB [-6.0] q [0.80] slope [12 v] [x] in
+//
+// The last two handles are the cuts - a high pass and a low pass, both
+// out until they are switched in. `in` is their switch, and it is the one
+// control in the row that only they have: a band is always in, and it is
+// its gain that says what it does. `slope` is theirs too: how hard the
+// cut that is selected cuts, in dB per octave.
 //
 // The panel is what every window that shows an eq is built from: the
 // eq's own window, the compressor's sidechain page, the master chain in
@@ -27,7 +34,7 @@
 ParaEQPanel {
 	var <eq, <view, <eqView, <spectrum;
 	var <>subject;				// what the hints call the thing being shaped
-	var onBox, specBox, presetMenu, bandBtns, freqBox, dbBox, qBox;
+	var onBox, specBox, presetMenu, bandBtns, freqBox, dbBox, qBox, slopeBox, cutBox;
 	var flatBtn, nameField, saveBtn, delBtn, copyBtn, pasteBtn, helpText;
 	var ctrl, classCtrl, hints, showOnBox;
 
@@ -121,7 +128,7 @@ ParaEQPanel {
 		bar.attach(presetMenu,
 			"ready made curves, then any you have saved - reads (custom) once"
 			" you move a band");
-		bar.attach(flatBtn, "every band back to 0 dB");
+		bar.attach(flatBtn, "every band back to 0 dB, and both cuts out");
 		bar.attach(nameField, "a name to keep the current curve under");
 		bar.attach(saveBtn,
 			"keep this curve under that name - it joins the menu, in this session"
@@ -134,17 +141,39 @@ ParaEQPanel {
 			" whether it is on");
 		bar.attach(eqView.view,
 			"drag a dot for frequency and gain, cmd-drag or the wheel for width,"
-			" shift to snap, double click for 0 dB - the shape behind is the"
-			" sound itself");
+			" shift to snap, double click for 0 dB - or, on one of the two"
+			" cuts, in and out - the shape behind is the sound itself");
 		bandBtns.do { |b, i|
-			bar.attach(b, "work on the " ++ ParaEQ.bandName(i));
+			bar.attach(b, if (ParaEQ.isCut(i)) {
+				("work on the %, and switch it in with `in` or by double"
+					" clicking its ring on the curve").format(ParaEQ.bandName(i))
+			} {
+				"work on the " ++ ParaEQ.bandName(i)
+			});
 		};
+		bar.attach(cutBox,
+			"switch the cut that is selected in - both of them are out until"
+			" you do, and out they cost nothing");
 		bar.attach(freqBox, { "where the % sits, in Hz"
 			.format(ParaEQ.bandName(eqView.selected)) });
-		bar.attach(dbBox, { "how far the % is lifted or cut, in dB"
-			.format(ParaEQ.bandName(eqView.selected)) });
+		bar.attach(dbBox, {
+			if (ParaEQ.isCut(eqView.selected)) {
+				"a cut has no gain - it is in or out"
+			} {
+				"how far the % is lifted or cut, in dB"
+					.format(ParaEQ.bandName(eqView.selected))
+			}
+		});
 		bar.attach(qBox, { "how wide the % is - smaller is narrower"
 			.format(ParaEQ.bandName(eqView.selected)) });
+		bar.attach(slopeBox, {
+			if (ParaEQ.isCut(eqView.selected)) {
+				"how hard the % cuts, in dB per octave - its corner stays put"
+					.format(ParaEQ.bandName(eqView.selected))
+			} {
+				"a band has no slope - only the two cuts do"
+			}
+		});
 		bar.attach(helpText, "the mouse on the curve, in short");
 		^this
 	}
@@ -213,11 +242,15 @@ ParaEQPanel {
 	}
 
 	prBandRow {
-		bandBtns = ParaEQ.numBands.collect { |i|
+		bandBtns = ParaEQ.numHandles.collect { |i|
 			Button().fixedWidth_(66).fixedHeight_(19).canFocus_(false)
 				.states_([[ParaEQ.bandName(i), FxPalette.dim, FxPalette.panel]])
 				.action_({ this.prSelectBand(i) })
 		};
+		// the switch of whichever cut is selected - see refresh, which is
+		// what greys it out while a band is
+		cutBox = CheckBox().string_("in").fixedWidth_(44)
+			.action_({ |v| eq !? (_.cutOn_(eqView.selected, v.value)) });
 		freqBox = NumberBox().fixedWidth_(58).decimals_(0)
 			.clipLo_(ParaEQ.minFreq).clipHi_(ParaEQ.maxFreq)
 			.action_({ |v| eq !? (_.freqAt_(eqView.selected, v.value)) });
@@ -227,16 +260,21 @@ ParaEQPanel {
 		qBox = NumberBox().fixedWidth_(48).decimals_(2)
 			.clipLo_(ParaEQ.qLo(0)).clipHi_(ParaEQ.qHi)
 			.action_({ |v| eq !? (_.qAt_(eqView.selected, v.value)) });
+		slopeBox = PopUpMenu().fixedWidth_(58)
+			.items_(ParaEQ.slopes.collect(_.asString))
+			.action_({ |v| eq !? (_.slopeAt_(eqView.selected, ParaEQ.slopes[v.value])) });
 		helpText = StaticText()
 			.string_("drag a dot: freq and gain   cmd-drag or wheel: width"
-				"   shift: snap   double click: 0 dB")
+				"   double click: flat, or a cut in and out")
 			.stringColor_(FxPalette.dim).font_(FxPalette.smallFont)
-			.align_(\right).minWidth_(330);
+			.align_(\right).minWidth_(150);
 
 		^HLayout(*(bandBtns ++ [
 			FxPalette.label("freq", 30), freqBox,
 			FxPalette.label("dB", 20), dbBox,
 			FxPalette.label("q", 14), qBox,
+			FxPalette.label("slope", 32), slopeBox,
+			cutBox,
 			nil,
 			helpText
 		])).spacing_(4)
@@ -265,6 +303,8 @@ ParaEQPanel {
 		if (e.isNil) {
 			onBox.value = false;
 			delBtn.enabled = false;
+			cutBox.enabled = false;
+			slopeBox.enabled = false;
 			eqView.refresh;
 			^this
 		};
@@ -276,14 +316,24 @@ ParaEQPanel {
 		delBtn.enabled = pre.notNil and: { ParaEQ.isUserPreset(pre) };
 		freqBox.value = e.freqAt(i).round(1);
 		dbBox.value = e.dbAt(i).round(0.1);
+		dbBox.enabled = ParaEQ.isCut(i).not;	// a cut has no gain
 		qBox.clipLo = ParaEQ.qLo(i);		// a shelf will not go as narrow
 		qBox.value = e.qAt(i).round(0.01);
+		// the switch belongs to the cuts alone, and reads as unchecked
+		// rather than as something a band could be
+		cutBox.enabled = ParaEQ.isCut(i);
+		cutBox.value = ParaEQ.isCut(i) and: { e.cutOn(i) };
+		slopeBox.enabled = ParaEQ.isCut(i);
+		slopeBox.value = ((e.slopeAt(i) ? ParaEQ.defaultSlope) / ParaEQ.slopeStep).asInteger - 1;
 		bandBtns.do { |b, j|
 			var on = (j == i);
+			// a cut that is out wears the grey of the things that are
+			// doing nothing, selected or not
+			var col = if (e.cutOn(j)) { FxPalette.eqBand(j) } { FxPalette.dim };
 			b.states_([[
 				ParaEQ.bandName(j),
-				if (on) { FxPalette.bg } { FxPalette.eqBand(j) },
-				if (on) { FxPalette.eqBand(j) } { FxPalette.panel }
+				if (on) { FxPalette.bg } { col },
+				if (on) { col } { FxPalette.panel }
 			]]);
 		};
 		eqView.refresh;
@@ -309,7 +359,7 @@ ParaEQGUI {
 
 	init { |argEq, x, y|
 		eq = argEq;
-		window = Window("eq · " ++ eq.label, Rect(x ? 100, y ? 100, 760, 300));
+		window = Window("eq · " ++ eq.label, Rect(x ? 100, y ? 100, 960, 300));
 		FxPalette.darken(window);
 
 		panel = ParaEQPanel(eq);

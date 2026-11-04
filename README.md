@@ -1,12 +1,13 @@
 # ParaEQ
 
-**A five band parametric eq that runs anywhere a UGen does, driven by an object
-that runs anywhere sclang does.** A SuperCollider extension.
+**A five band parametric eq with a high pass and a low pass, that runs anywhere
+a UGen does, driven by an object that runs anywhere sclang does.** A
+SuperCollider extension.
 
 Write `ParaEQ.ar` into a graph of your own — an Ndef, a SynthDef — and drive its
-bands from an object with a window: the curve, five handles, the spectrum of the
-signal behind them, presets, a clipboard. The same object can own a synth on a
-bus instead, in place, or sit in a chain of effects on the main out.
+bands from an object with a window: the curve, seven handles, the spectrum of
+the signal behind them, presets, a clipboard. The same object can own a synth on
+a bus instead, in place, or sit in a chain of effects on the main out.
 
 ```supercollider
 s.boot;
@@ -16,6 +17,8 @@ e = ParaEQ(Ndef(\pad), \eq);     // drives that Ndef's \eq control
 e.gui;                           // drag the dots; the analysis behind is the Ndef's bus
 e.preset = \telephone;
 e.setBand(0, 80, -9, 0.8);       // low shelf, 80 Hz, -9 dB, rs 0.8
+e.highPassOn = true;             // and nothing under 60 Hz
+e.highPassFreq = 60;
 ```
 
 It depends on nothing. Two other extensions of mine are built on it —
@@ -76,8 +79,9 @@ evaluate a block at a time.
 ## In a graph of your own
 
 `ParaEQ.ar(in, name)` is the filter — five biquads in series, low shelf, three
-peaks, high shelf, each a `[freq, dB, q]` triple — reading its bands off a
-control called `name` and an on/off switch called `name` + `On`. It goes wherever
+peaks, high shelf, each a `[freq, dB, q]` triple, with a high pass and a low
+pass in front of them — reading its bands off a control called `name`, its two
+cuts off `name` + `Cut`, their slopes off `name` + `Slope`, and an on/off switch off `name` + `On`. It goes wherever
 a UGen goes:
 
 ```supercollider
@@ -99,6 +103,36 @@ e.dbAt_(4, 3);                   // one number of one band
 e.enabled = false;               // crossfades to dry; the graph does not know
 e.gui;
 ```
+
+## Either end taken off
+
+After the five bands come two cuts — a high pass and a low pass. They are
+switches rather than gains, and both are **out until you switch one in**, so an
+eq that has never been told about them is the eq it always was:
+
+```supercollider
+e.highPassOn = true;             // the rumble gone
+e.highPassFreq = 60;
+e.highPassQ = 1.414;             // an rq: 1.414 is flat, smaller rings at the corner
+e.highPassSlope = 48;            // how hard it cuts: 6 to 96 dB per octave, in 6s, 12 by default
+e.lowPassOn = true;  e.lowPassFreq = 12000;
+e.toggleCut(ParaEQ.highPass);    // the same two by handle index: 5 and 6
+e.flat;                          // every band flat and both cuts out again
+```
+
+They travel on a control of their own, `name` + `Cut`, so a node built before
+they existed still takes the bands; a preset, the clipboard and a saved kit
+carry them along with the curve, and anything saved before they existed reads
+back with both of them out.
+
+The slope goes from 6 to 96 in steps of 6, because a filter only comes in whole
+orders, 6 dB per octave each. Every step is 3 dB down at the corner, so changing
+it only changes how hard the filter falls away, and a value between steps goes to
+the nearest one. Nothing fades as it changes, so moving it on a playing sound can
+click. 12 is the one biquad these cuts always were, and anything saved before there
+were slopes reads back at 12. Your rq works on the narrowest stage, and at 6 there
+is none for it to work on. Having all of it in the graph costs a stereo eq 51 KB of real time memory against
+16 before, whatever the slope is; the CPU hardly moves.
 
 An Ndef keeps what it was set in its nodeMap, so a second object made for the
 same Ndef adopts the bands it already carries instead of resetting them, and a
@@ -197,9 +231,10 @@ page, the master chain, a module's eq tab.
 ```
  [x] eq on  [x] spectrum  preset [warm v] [flat]  [name   ][save][delete]   [copy][paste]
  +--------------------------------------------------------------------------------+
- |  the curve, five handles, and behind them the spectrum of what the eq is on    |
+ |  the curve, seven handles, and behind them the spectrum of what the eq is on   |
  +--------------------------------------------------------------------------------+
- [low shelf][peak 1][peak 2][peak 3][high shelf]  freq [ 80] dB [-9.0] q [0.80]
+ [low shelf][peak 1][peak 2][peak 3][high shelf][high pass][low pass]
+                              freq [ 80] dB [-9.0] q [0.80] [x] in
  hover a control and this bar says what it does
 ```
 
@@ -208,7 +243,9 @@ page, the master chain, a module's eq tab.
 - **cmd + drag up and down**, or the **wheel**, for the width of the selected band.
   It is relative, so it never jumps.
 - **shift** while dragging snaps to round frequencies, whole dB, round widths.
-- **double click** a dot for 0 dB.
+- **double click** a dot for 0 dB — or, on one of the two cuts, in and out.
+- The two cuts are the last handles, drawn as **rings** while they are out.
+  `in` is their switch; the dB box greys out on one, since a cut has no gain.
 - The line along the bottom says what the pointer is on. Untick **hints** to fold
   it away.
 

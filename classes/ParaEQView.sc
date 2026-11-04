@@ -2,14 +2,19 @@
 // ParaEQView - the response curve of an eq, and its handles
 //
 // The five bands as five dots on a frequency / gain plane, over the curve
-// they add up to. Drag a dot and the filter follows:
+// they add up to, and after them the two cuts - the high pass and the low
+// pass - as two more dots on the flat line, hollow while they are out.
+// Drag a dot and the filter follows:
 //
 //   drag                  frequency and gain
 //   cmd + drag up / down  the width of that band (rs / rq)
 //   alt + drag            the same, for a hand that is already there
 //   the wheel             the same again, without pressing anything
 //   shift while dragging  snap to round frequencies, whole dB, round widths
-//   double click a dot    that band back to 0 dB
+//   double click a dot    that band back to 0 dB - a cut in or out
+//
+// A cut has no gain, so dragging one moves it along the frequency axis
+// alone and the height of the mouse means nothing to it.
 //
 // A plain click picks up the nearest band, so a dot never has to be hit
 // exactly. A cmd drag does not: it leaves the selection alone and works
@@ -66,6 +71,15 @@ ParaEQView {
 		^mod.isCmd or: { mod.isCtrl } or: { mod.isAlt }
 	}
 
+	// what a handle is marked with: the bands numbered, the cuts lettered
+	*handleLabel { |i|
+		^if (ParaEQ.isCut(i)) {
+			["H", "L"][i - ParaEQ.numBands] ? "C"
+		} {
+			(i + 1).asString
+		}
+	}
+
 	*font { ^font ?? { font = Font(Font.defaultSansFace, 9) } }
 	*boldFont { ^boldFont ?? { boldFont = Font(Font.defaultSansFace, 10, true) } }
 
@@ -93,7 +107,7 @@ ParaEQView {
 	// boxes too. Saying what it already says does nothing, which is what
 	// stops that round trip from coming back round again.
 	selected_ { |i|
-		i = i.clip(0, ParaEQ.numBands - 1);
+		i = i.clip(0, ParaEQ.numHandles - 1);
 		if (i == selected) { ^this };
 		selected = i;
 		this.refresh;
@@ -146,7 +160,7 @@ ParaEQView {
 	prCurves {
 		var n, xs, key;
 		n = (bw / 3).round.asInteger.clip(48, 260);
-		key = [eq.bands.flat, bw, this.prSampleRate, n];
+		key = [eq.settings.flat, bw, this.prSampleRate, n];
 		if (curveKey == key) { ^curveCache };
 		xs = Array.fill(n, { |i| i * bw / (n - 1) });
 		curveCache = [xs, eq.responseAt(xs.collect { |x| this.prXToFreq(x) },
@@ -161,7 +175,7 @@ ParaEQView {
 	// Never miss: a click that lands on no dot picks up the nearest one.
 	prNearest { |x, y|
 		var best = 0, bestDist = inf;
-		ParaEQ.numBands.do { |i|
+		ParaEQ.numHandles.do { |i|
 			var d = Point(this.prFreqToX(eq.freqAt(i)), this.prDbToY(eq.dbAt(i)))
 				.dist(Point(x, y));
 			if (d < bestDist) { bestDist = d; best = i };
@@ -186,9 +200,10 @@ ParaEQView {
 		i = hit[0];
 		dist = hit[1];
 		this.selected_(i);
-		if (count > 1 and: { dist <= grabRadius }) {		// double click = flat band
+		// double click: a band back to flat, a cut in or out
+		if (count > 1 and: { dist <= grabRadius }) {
 			drag = nil;
-			eq.dbAt_(i, 0);
+			if (ParaEQ.isCut(i)) { eq.toggleCut(i) } { eq.dbAt_(i, 0) };
 			this.refresh;
 			^this
 		};
@@ -374,36 +389,61 @@ ParaEQView {
 		};
 	}
 
+	// The bands numbered 1 to 5, and the two cuts as H and L on the flat
+	// line. A cut that is out is a ring rather than a dot: it is still
+	// there to take hold of, and says at a glance that it is doing nothing.
 	prDrawHandles { |w, h|
-		ParaEQ.numBands.do { |i|
+		ParaEQ.numHandles.do { |i|
+			var out = eq.cutOn(i).not;
 			var col = FxPalette.eqBand(i);
 			var p = Point(this.prFreqToX(eq.freqAt(i)), this.prDbToY(eq.dbAt(i)));
 			var r = if (i == selected) { 6 } { 4.5 };
-			Pen.fillColor = col;
-			Pen.fillOval(Rect(p.x - r, p.y - r, r * 2, r * 2));
+			if (out) {
+				Pen.strokeColor = col;
+				Pen.width = 1.5;
+				Pen.strokeOval(Rect(p.x - r, p.y - r, r * 2, r * 2));
+			} {
+				Pen.fillColor = col;
+				Pen.fillOval(Rect(p.x - r, p.y - r, r * 2, r * 2));
+			};
 			if (i == selected) {
 				Pen.strokeColor = FxPalette.handle;
 				Pen.width = 1.5;
 				Pen.strokeOval(Rect(p.x - r - 3, p.y - r - 3, (r + 3) * 2, (r + 3) * 2));
 			};
-			Pen.stringCenteredIn((i + 1).asString,
+			Pen.stringCenteredIn(ParaEQView.handleLabel(i),
 				Rect(p.x - 6, p.y - 6, 12, 12),
-				ParaEQView.font, FxPalette.waveBg);
+				ParaEQView.font,
+				if (out) { col } { FxPalette.waveBg });
 		};
 	}
 
 	prDrawReadout { |w, h|
 		var i = selected;
-		var str = "% - % Hz  % dB  %".format(
-			ParaEQ.bandName(i),
-			eq.freqAt(i).round(1).asInteger,
-			if (eq.dbAt(i) > 0) { "+" ++ eq.dbAt(i).round(0.1) } { eq.dbAt(i).round(0.1) },
-			(if (ParaEQ.isShelf(i)) { "rs " } { "rq " }) ++ eq.qAt(i).round(0.01));
+		var str;
+		if (ParaEQ.isCut(i)) {
+			str = "% - % Hz  % dB/oct  rq %".format(
+				ParaEQ.bandName(i),
+				eq.freqAt(i).round(1).asInteger,
+				eq.slopeAt(i).asInteger,
+				eq.qAt(i).round(0.01));
+			if (eq.cutOn(i).not) { str = str ++ "   (out)" };
+		} {
+			str = "% - % Hz  % dB  %".format(
+				ParaEQ.bandName(i),
+				eq.freqAt(i).round(1).asInteger,
+				if (eq.dbAt(i) > 0) { "+" ++ eq.dbAt(i).round(0.1) } { eq.dbAt(i).round(0.1) },
+				(if (ParaEQ.isShelf(i)) { "rs " } { "rq " }) ++ eq.qAt(i).round(0.01));
+		};
 		if (eq.enabled.not) { str = str ++ "   (eq off)" };
 		Pen.fillColor = FxPalette.waveBg.copy.alpha_(0.72);
 		Pen.fillRect(Rect(0, 0, w, 14));
 		Pen.stringLeftJustIn(" " ++ str, Rect(3, 1, w - 6, 12),
 			ParaEQView.boldFont,
-			if (eq.enabled) { FxPalette.eqBand(i) } { FxPalette.dim });
+			if (eq.enabled and: { eq.cutOn(i) }) {
+				FxPalette.eqBand(i)
+			} {
+				FxPalette.dim
+			});
 	}
 }

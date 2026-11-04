@@ -335,7 +335,9 @@ FxUnit {
 		{
 			var d = this.def(numChannels);
 			d.add;
-			if (server != Server.default) { d.send(server) };
+			// add has told every booted server already. A big def goes by a file
+			// that each send deletes, so telling one twice would lose it
+			if (Server.allBootedServers.includes(server).not) { d.send(server) };
 			server.sync;
 			servers.add(server);
 			done.value;

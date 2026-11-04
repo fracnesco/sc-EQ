@@ -110,6 +110,19 @@ FxChainPanel {
 				FxPalette.button(pair[1], nil, { chain.add(cls.new) })
 			}
 		}.reject(_.isNil);
+		// the effects of sc fx kit, each its own extension: a menu, since there can be many
+		\FxParamUnit.asClass !? { |base|
+			var classes = base.allSubclasses.sort { |a, b| a.name < b.name };
+			if (classes.notEmpty) {
+				addBtns = addBtns.add(PopUpMenu().fixedWidth_(96)
+					.items_(["+ effect..."] ++ classes.collect { |c| c.title })
+					.action_({ |v|
+						var i = (v.value ? 0) - 1;
+						v.value = 0;
+						if (i >= 0) { chain.add(classes[i].new) };
+					}));
+			};
+		};
 
 		items = [onBox, nameText, FxPalette.label("preset", 40), presetMenu,
 			saveBtn, loadBtn, nil] ++ addBtns;
@@ -177,7 +190,7 @@ FxChainGUI {
 
 	init { |argChain, x, y|
 		chain = argChain;
-		window = Window("fx · " ++ chain.name, Rect(x ? 100, y ? 100, 780, 640));
+		window = Window("fx · " ++ chain.name, Rect(x ? 100, y ? 100, 980, 660));
 		FxPalette.darken(window);
 
 		panel = FxChainPanel(chain);

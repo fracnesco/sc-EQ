@@ -132,8 +132,12 @@ METHOD:: fromDict
 The whole chain as one preset - see above.
 
 METHOD:: gui
+METHOD:: closeGui
 METHOD:: panel
-A window - link::Classes/FxChainGUI:: - or the same as a view.
+A window - link::Classes/FxChainGUI:: - opened or closed, or the same as a
+view. The window is made once and brought to the front after that, and both
+ways round announce code::\gui::, so a button elsewhere that opens it -
+ServerView's code::fx:: - can keep its light right without asking.
 
 METHOD:: analysisPlacement
 Where an analyser reading the whole chain goes: the tail of its group.
