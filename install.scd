@@ -19,7 +19,7 @@
 // Compressor (../sc compressor) and ModuleCommon (../module common) -
 // and their installers link this one first when it sits next to them.
 // BusManager, if it happens to be installed, lets a bus be named; and
-// ServerView, if it is the fracnesco fork, grows an fx section that
+// ServerPanel (sc-server-panel) grows an fx section that
 // opens the master chain. Neither is needed to compile.
 
 (
@@ -74,8 +74,8 @@ if (missing.notEmpty) {
 	if (\ModuleCommon.asClass.notNil) {
 		"  ModuleCommon is installed too - every pad's eq is a ParaEQ".postln;
 	};
-	if (\ServerView.asClass.notNil) {
-		"  ServerView is installed too - its fx button opens the master chain".postln;
+	if (\ServerPanel.asClass.notNil) {
+		"  ServerPanel is installed too - its fx button opens the master chain".postln;
 	};
 };
 )

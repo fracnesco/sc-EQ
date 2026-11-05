@@ -1,13 +1,13 @@
 TITLE:: FxChain
 summary:: a series of effects on a bus, in place, in order
 categories:: Libraries>ParaEQ
-related:: Classes/FxUnit, Classes/ParaEQ, Classes/Compressor, Classes/FxChainGUI, Classes/FxChainPanel, Classes/ServerView
+related:: Classes/FxUnit, Classes/ParaEQ, Classes/Compressor, Classes/FxChainGUI, Classes/FxChainPanel, Classes/ServerPanel
 
 DESCRIPTION::
 One group on the server, a list of link::Classes/FxUnit::s inside it, all
 working on the same bus one after another. The one everybody wants is the master
 chain - an eq and a compressor on the main out - and that is what
-link::Classes/ServerView::'s code::fx:: section opens:
+link::Classes/ServerPanel::'s code::fx:: section opens:
 
 code::
 c = FxChain.master;              // bus 0, every output channel
@@ -30,7 +30,7 @@ subsection:: Where it sits
 
 The group is built after the default group when the server comes up and again
 after cmd + period, so the chain hears everything that plays, and whatever reads
-the bus at the tail of the root node - ServerView's meters, a recorder, Insight -
+the bus at the tail of the root node - ServerPanel's meters, a recorder, Insight -
 hears the chain. The server's own volume synth is made after the default group
 too, and later, so it lands before the chain: the volume knob is a trim into the
 chain rather than a fader after it.
@@ -137,7 +137,7 @@ METHOD:: panel
 A window - link::Classes/FxChainGUI:: - opened or closed, or the same as a
 view. The window is made once and brought to the front after that, and both
 ways round announce code::\gui::, so a button elsewhere that opens it -
-ServerView's code::fx:: - can keep its light right without asking.
+ServerPanel's code::fx:: - can keep its light right without asking.
 
 METHOD:: analysisPlacement
 Where an analyser reading the whole chain goes: the tail of its group.

@@ -5,7 +5,7 @@ related:: Classes/ParaEQ, Classes/ParaEQGUI, Classes/ParaEQView, Classes/ParaEQS
 
 DESCRIPTION::
 What every window that shows an eq is built from: the eq's own window, the
-compressor's sidechain page, the master chain in ServerView, the module family's
+compressor's sidechain page, the master chain in ServerPanel, the module family's
 eq tab.
 
 code::

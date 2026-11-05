@@ -10,7 +10,7 @@
 // One strip per effect - its name, and buttons to move or drop it -
 // over the effect's own panel, which is where all of its controls are.
 // The panel follows the chain: an effect added from code turns up, one
-// removed goes away. ServerView embeds this under its counters; `gui`
+// removed goes away. ServerPanel embeds this under its counters; `gui`
 // opens it in a window with a hint bar.
 //
 //   panel = FxChainPanel(chain);

@@ -1,7 +1,7 @@
 // =====================================================================
 // FxPalette - the colours and fonts every effect window is drawn in
 //
-// The same values the module family, Insight and ServerView use, so an
+// The same values the module family, Insight and ServerPanel use, so an
 // eq opened from a pad, from the master chain or from an Ndef looks like
 // one instrument. Kept here so this repository depends on nothing.
 //

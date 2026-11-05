@@ -18,7 +18,7 @@ panel.running = true;          // the analysers, while it is showing
 panel.remove;                  // in window.onClose
 ::
 
-link::Classes/ServerView:: embeds this under its counters; link::Classes/FxChainGUI::
+link::Classes/ServerPanel:: embeds this under its counters; link::Classes/FxChainGUI::
 puts it in a window.
 
 CLASSMETHODS::

@@ -23,7 +23,7 @@ e.highPassFreq = 60;
 
 It depends on nothing. Two other extensions of mine are built on it —
 [Compressor](../sc%20compressor) and [ModuleCommon](../module%20common), whose
-pads and slots each own one of these — and [ServerView](https://github.com/fracnesco/ServerView.quark)
+pads and slots each own one of these — and [ServerPanel](https://github.com/fracnesco/sc-server-panel)
 grows an `fx` section that opens the master chain when this is installed.
 [BusManager](../sc%20bus%20manager) is optional and lets a bus be named.
 
@@ -181,7 +181,7 @@ c.enabled = false;               // the whole chain out, whatever each effect sa
 
 The group is built after the default group when the server comes up and again
 after cmd + period, so the chain hears everything that plays, and whatever reads
-the bus at the tail — ServerView's meters, a recorder, Insight — hears the chain.
+the bus at the tail — ServerPanel's meters, a recorder, Insight — hears the chain.
 The server's own volume synth sits before it, so the volume knob is a trim into
 the chain rather than a fader after it. An effect that is off has no node.
 

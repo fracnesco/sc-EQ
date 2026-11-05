@@ -16,7 +16,7 @@
 //
 // The panel is what every window that shows an eq is built from: the
 // eq's own window, the compressor's sidechain page, the master chain in
-// ServerView, the module family's eq tab. It follows one ParaEQ, and can
+// ServerPanel, the module family's eq tab. It follows one ParaEQ, and can
 // be pointed at another - `panel.eq = otherEq` - which is how a module
 // window shows the eq of whichever pad is selected.
 //

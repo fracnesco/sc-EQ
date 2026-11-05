@@ -4,7 +4,7 @@
 // One group on the server, a list of FxUnits inside it, all working on
 // the same bus one after another. The one everybody wants is the master
 // chain - an eq and a compressor on the main out - and that is what
-// ServerView opens:
+// ServerPanel opens:
 //
 //   c = FxChain.master;              // bus 0, every output channel
 //   c.units;                         // -> [ParaEQ, Compressor]
@@ -261,7 +261,7 @@ FxChain {
 	// existing file keeps whatever name it already has.
 	*presetPath { |name|
 		var p = name.asString;
-		if (p.contains("/").not) { p = this.presetDir +/+ p };
+		if (p.contains("/").not and: { p.contains("\\").not }) { p = this.presetDir +/+ p };
 		p = p.standardizePath;
 		if (PathName(p).extension.isEmpty and: { File.exists(p).not }) {
 			p = p ++ ".scd";
@@ -347,7 +347,7 @@ FxChain {
 
 	// The window, made once and brought to the front after that. Both ways
 	// round announce `\gui`, so a button somewhere else that opens this
-	// window - ServerView's `fx` - knows whether it is up without having to
+	// window - ServerPanel's `fx` - knows whether it is up without having to
 	// ask.
 	gui { |x, y|
 		if (guiObj.isNil) { guiObj = FxChainGUI(this, x, y) } { guiObj.front };
