@@ -42,6 +42,11 @@
 // The curve the window draws is worked out here too, from the same
 // coefficients the server uses, so what you see is the filter you get.
 // The module family's ModuleEQ is one of these, on a pad's own chain.
+//
+// A window shows the levels in and out of the eq while it is open: the eq's
+// own node and a chain always send them, a graph of your own only when it
+// asks (`ParaEQ.ar(sig, \eq, meter: true)`) - left out, the graph is the one
+// it always was.
 // =====================================================================
 
 ParaEQ : FxUnit {
@@ -66,9 +71,16 @@ ParaEQ : FxUnit {
 	// is a whistle rather than a filter.
 	classvar <>cutQLo = 0.1;
 
+	// how many times a second a node with a meter says its levels, while a
+	// window is showing them
+	classvar <>meterRate = 25;
+	classvar idCounter = 0;
+
 	var <bands;
 	var <cuts;						// [freq, rq, in] each - see numHandles - and a
 									// slope after them, when it is not the default
+	var id, meterOn = false, responder;		// the meter: see meter_
+	var inLevel = 0, outLevel = 0, <lastReply = 0;
 
 	*initClass {
 		bandNames = ["low shelf", "peak 1", "peak 2", "peak 3", "high shelf"];
@@ -96,7 +108,13 @@ ParaEQ : FxUnit {
 	// The cuts come first, being the ones that take something away, and
 	// the five bands after them. All of it is linear, so that order is
 	// housekeeping rather than sound.
-	*ar { |in, name = \eq, bypass = true, lag|
+	//
+	// `meter: true` adds the levels a window shows: the peak going in and
+	// coming out, `meterRate` times a second, but only while `name`Meter is
+	// 1 - the object sets it while a window is open - and tagged with
+	// `name`Id, so each eq hears its own. Nothing in the sound changes. Left
+	// out, the graph is exactly the one it was before there were meters.
+	*ar { |in, name = \eq, bypass = true, lag, meter = false|
 		var b, c, slopes, sig, on;
 		name = name.asSymbol;
 		lag = lag ? this.lag;
@@ -121,8 +139,27 @@ ParaEQ : FxUnit {
 			on = Lag.kr(NamedControl.kr((name.asString ++ "On").asSymbol, 1), this.fade);
 			sig = in + ((sig - in) * on);
 		};
+		if (meter == true) { this.prMeter(in, sig, name) };
 		^sig
 	}
+
+	// The levels, at control rate - Peak.kr reads the whole block of an audio
+	// input - so the meter costs no wire buffers: the loudest channel in, the
+	// loudest out, after the switch, so an eq that is off reads the same both
+	// sides.
+	*prMeter { |in, out, name|
+		var trig = Impulse.kr(this.meterRate) * NamedControl.kr(this.meterName(name), 0);
+		SendReply.kr(trig, this.replyName, [
+			Peak.kr(in, trig).asArray.reduce(\max),
+			Peak.kr(out, trig).asArray.reduce(\max)
+		], NamedControl.kr(this.idName(name), -1));
+	}
+
+	*replyName { ^'/paraeq' }
+
+	// the meter's two controls, next to the eq's own
+	*meterName { |name| ^(name.asString ++ "Meter").asSymbol }
+	*idName { |name| ^(name.asString ++ "Id").asSymbol }
 
 	// One cut and the switch that fades it in: at 0 the signal goes past
 	// untouched, so a cut that is out is out, however its frequency has
@@ -194,11 +231,11 @@ ParaEQ : FxUnit {
 	// In place on a bus: XOut rather than Out, so the envelope crossfades
 	// between what is on the bus and what came out of the filters, and
 	// switching the eq in and out leaves the dry signal behind rather than
-	// silence.
+	// silence. With the meter: it is silent until a window asks.
 	*synthDef { |numChannels|
 		var n = numChannels.asInteger;
 		^SynthDef(this.defName(n), { |bus = 0, gate = 1, fade = 0.02|
-			var sig = ParaEQ.ar(In.ar(bus, n), \eq, bypass: false);
+			var sig = ParaEQ.ar(In.ar(bus, n), \eq, bypass: false, meter: true);
 			var env = EnvGen.kr(Env.asr(fade, 1, fade), gate, doneAction: Done.freeSelf);
 			XOut.ar(bus, env, sig);
 		})
@@ -206,6 +243,12 @@ ParaEQ : FxUnit {
 
 	*guiClass { ^ParaEQGUI }
 	*panelClass { ^ParaEQPanel }
+
+	// what its window is called, and how big it opens (sc-fx-ui) - and its
+	// colour: ivory, the summed curve, since the bands have the hues
+	*title { ^"eq" }
+	*windowSize { ^Point(960, 560) }
+	*identityColour { ^FxPalette.ivory }
 
 	// ------------------------------------------------- bands, and the cuts
 
@@ -259,6 +302,59 @@ ParaEQ : FxUnit {
 	*bandName { |i|
 		^(if (this.isCut(i)) { cutNames[i - this.numBands] } { bandNames[i] })
 			? "band"
+	}
+
+	// ------------------------------------------------------ the window's words
+
+	// The window says what a handle does rather than what filter it is: the
+	// high pass takes the lows away, so it is the low cut. bandName keeps the
+	// names the code uses.
+	*shapeWord { |i|
+		^case
+		{ this.isCut(i) } { this.cutWord(i) }
+		{ i == 0 } { "low shelf" }
+		{ i == (this.numBands - 1) } { "high shelf" }
+		{ true } { "bell" }
+	}
+
+	*cutWord { |i| ^#["low cut", "high cut"][(i - this.numBands).clip(0, 1)] }
+
+	// each handle's colour, low to high, and the two cuts' silver
+	*handleColour { |i| ^FxPalette.eqHandle(i) }
+
+	// How wide a bell is, in octaves between the two points where it has half
+	// its gain in dB - what a musician means by wide - from the rq it runs on,
+	// at a frequency and a rate: RBJ's bandwidth, the bilinear warp included,
+	// so it is the filter the server runs (1.39 octaves at rq 1, a little
+	// less as a bell nears the top). bellRq is the same the other way round.
+	*bellOctaves { |rq, freq, sr = 44100|
+		var w0 = 2pi * freq.clip(1, sr * 0.49) / sr, x = rq * 0.5;
+		^(2 / 2.log) * (x + (x.squared + 1).sqrt).log * (w0.sin / w0)
+	}
+
+	*bellRq { |octaves, freq, sr = 44100|
+		var w0 = 2pi * freq.clip(1, sr * 0.49) / sr;
+		^2 * (octaves * (2.log / 2) * (w0 / w0.sin)).sinh
+	}
+
+	// A cut's corner, as the window shows it: 0 is the flat Butterworth
+	// corner (rq 1.414, 3 dB down and no bump), up to 1 it rings - rq down to
+	// cutQLo - and down to -1 it rounds off, rq up to 10. Logarithmic both
+	// ways, since that is how rq is heard.
+	*cutRq { |res|
+		var r = res.clip(-1, 1);
+		^if (r >= 0) {
+			2.sqrt * ((cutQLo / 2.sqrt) ** r)
+		} {
+			2.sqrt * ((this.qHi / 2.sqrt) ** r.neg)
+		}
+	}
+
+	*cutRes { |rq|
+		var r = rq.clip(cutQLo, this.qHi) / 2.sqrt, v;
+		v = if (r <= 1) { r.log / (cutQLo / 2.sqrt).log } { (r.log / (this.qHi / 2.sqrt).log).neg };
+		// the presets say 1.414, a hair under root two: that is the flat corner
+		^if (v.abs < 0.001) { 0 } { v }
 	}
 
 	prInitSettings {
@@ -351,6 +447,31 @@ ParaEQ : FxUnit {
 	lowPassQ_ { |v| this.qAt_(ParaEQ.lowPass, v) }
 	lowPassSlope { ^this.slopeAt(ParaEQ.lowPass) }
 	lowPassSlope_ { |v| this.slopeAt_(ParaEQ.lowPass, v) }
+
+	// A band's width as the window shows it: a bell's in octaves (see
+	// *bellOctaves, at the server's rate), a shelf's as its rs - the window
+	// reads it as a percent. nil on a cut, which has resAt instead.
+	widthAt { |i|
+		^case
+		{ ParaEQ.isCut(i) } { nil }
+		{ ParaEQ.isShelf(i) } { this.qAt(i) }
+		{ true } { ParaEQ.bellOctaves(this.qAt(i), this.freqAt(i), this.sampleRate) }
+	}
+
+	widthAt_ { |i, w|
+		if (ParaEQ.isCut(i) or: { w.isNil }) { ^this };
+		this.qAt_(i, if (ParaEQ.isShelf(i)) { w } {
+			ParaEQ.bellRq(w, this.freqAt(i), this.sampleRate)
+		});
+	}
+
+	// how much a cut's corner rings, -1 .. 1 - see *cutRes; nil on a band
+	resAt { |i| ^if (ParaEQ.isCut(i)) { ParaEQ.cutRes(this.qAt(i)) } }
+
+	resAt_ { |i, v|
+		if (ParaEQ.isCut(i).not or: { v.isNil }) { ^this };
+		this.qAt_(i, ParaEQ.cutRq(v));
+	}
 
 	// Every handle at once, as [[freq, dB, q], ...] - one push, one
 	// redraw. Seven of them carry the two cuts after the bands, which is
@@ -477,6 +598,7 @@ ParaEQ : FxUnit {
 	target_ { |node|
 		var held;
 		super.target_(node);
+		if (meterOn) { if (this.canMeter) { this.prPushMeter; this.prListen } { this.prUnlisten } };
 		if (node.isNil) { ^this };
 		held = node.tryPerform(\nodeMap) !? { |m| m.tryPerform(\at, this.cutName) };
 		held = held !? { |h| h.value.asArray };
@@ -494,6 +616,86 @@ ParaEQ : FxUnit {
 			this.prPushCuts;
 		};
 		^this
+	}
+
+	// --------------------------------------------------------------- meters
+
+	// Whether the node says its levels: a window turns this on while it is
+	// open, and inLevel / outLevel are then the peaks going in and coming
+	// out, 0 .. 1 and over, changed(\levels) on every reply. The eq's own node
+	// and a chain always can; a driven graph only if it was built with
+	// `meter: true` - SuperDirtGUI's eq insert is - and a holder of settings
+	// with no node (the compressor's sidechain eq) never.
+	meter_ { |bool|
+		bool = bool == true;
+		if (bool == meterOn) { ^this };
+		meterOn = bool;
+		if (this.canMeter.not) { ^this.prUnlisten };
+		this.prPushMeter;
+		if (meterOn) { this.prListen } { this.prUnlisten };
+	}
+
+	meter { ^meterOn }
+
+	// whether there is anything that could say its levels
+	canMeter { ^target.notNil or: { placement.notNil } or: { chain.notNil } }
+
+	// one number per eq, which its node tags its replies with
+	id { ^id ?? { idCounter = idCounter + 1; id = idCounter } }
+
+	// The levels, while they are arriving: a node that has stopped saying
+	// them - switched off, freed, paused - reads silent rather than standing
+	// at its last reply.
+	inLevel { ^if (this.isAlive) { inLevel } { 0 } }
+	outLevel { ^if (this.isAlive) { outLevel } { 0 } }
+
+	isAlive { ^meterOn and: { (Main.elapsedTime - lastReply) < 0.5 } }
+
+	// whether anything has come back since the meter was switched on: a
+	// graph built without `meter: true` never answers
+	hasReplied { ^lastReply > 0 }
+
+	meterName { ^ParaEQ.meterName(controlName) }
+	idName { ^ParaEQ.idName(controlName) }
+
+	prPushMeter {
+		var on = meterOn.binaryValue;
+		synth !? { |sy| sy.set(this.idName, this.id, this.meterName, on) };
+		target !? { |t| t.set(this.idName, this.id, this.meterName, on) };
+	}
+
+	// a node of its own starts with them, so the first reply is not a message late
+	prNodeArgs { ^[this.idName, this.id, this.meterName, meterOn.binaryValue] }
+
+	prJoinChain { |aChain|
+		super.prJoinChain(aChain);
+		if (meterOn) { this.prListen };
+	}
+
+	// Fixed, so cmd + period does not take it: a chain's node comes back with
+	// the tree and goes on answering to the same number.
+	prListen {
+		var srv = this.server ? Server.default;
+		this.prUnlisten;
+		lastReply = 0;
+		responder = OSCFunc({ |msg|
+			inLevel = msg[3] ? 0;
+			outLevel = msg[4] ? 0;
+			lastReply = Main.elapsedTime;
+			this.changed(\levels);
+		}, ParaEQ.replyName, srv.addr, argTemplate: [nil, this.id]).fix;
+	}
+
+	prUnlisten {
+		responder !? (_.free);
+		responder = nil;
+		inLevel = 0;
+		outLevel = 0;
+	}
+
+	free {
+		this.prUnlisten;
+		super.free;
 	}
 
 	// ------------------------------------------------------------- presets
@@ -517,8 +719,9 @@ ParaEQ : FxUnit {
 	}
 
 	// The two cuts are put on the end of each of these as it comes out,
-	// both out: a preset is the whole eq, so choosing one puts the cuts
-	// back where they started as well.
+	// both out, unless the preset says where they are: a preset is the
+	// whole eq, so choosing one puts the cuts back where they started as
+	// well. New ones go at the end - flatSettings reads the first.
 	*prBuiltinPresets {
 		// 1.414 is an rq of root two - Q of 0.707, the flattest a cut goes,
 		// 3 dB down at its own frequency and no bump before it
@@ -543,8 +746,21 @@ ParaEQ : FxUnit {
 					[7400, 7, 1]],
 			\telephone,
 				[[600, -22, 0.7], [250, 0, 1], [1200, -2, 0.5], [1800, 1, 0.5],
-					[4000, -22, 0.7]]
-		].clump(2).collect { |pair| [pair[0], pair[1] ++ bothOut.deepCopy] }.flatten(1)
+					[4000, -22, 0.7]],
+			// 2026-11-09: three that use the cuts, so the window shows them working
+			\radio,
+				// the flat bands kept clear of the cuts' dots
+				[[100, 0, 1], [180, 0, 1], [1500, 3, 1], [2400, 0, 1], [6000, 0, 1],
+					[300, 1.414, true, 24], [3400, 1.414, true, 24]],
+			'kick weight',
+				[[60, 4, 0.8], [300, -3, 1.2], [1000, 0, 1], [4000, 3, 1], [6000, 0, 1],
+					[30, 1.414, true, 24], [16000, 1.414, false]],
+			\air,
+				[[100, 0, 1], [250, 0, 1], [1000, 0, 1], [3500, 0, 1], [10000, 4, 0.8],
+					[40, 1.414, true], [16000, 1.414, false]]
+		].clump(2).collect { |pair|
+			[pair[0], if (pair[1].size == this.numBands) { pair[1] ++ bothOut.deepCopy } { pair[1] }]
+		}.flatten(1)
 	}
 
 	*presets { ^this.presetStore.builtins }

@@ -156,6 +156,15 @@ ParaEQSpectrum {
 	// the class is switched on, and the eq is somewhere it can be read.
 	visible { ^running and: { ParaEQSpectrum.on } and: { this.prWanted } }
 
+	// The level now at a frequency, in dB - the band it falls in - for a
+	// readout that follows the pointer (the eq window's caption)
+	levelAt { |freq|
+		var n = freqs.size, k;
+		if (n < 1 or: { levels.isNil }) { ^nil };
+		k = (freq.clip(minFreq, maxFreq) / minFreq).log / (maxFreq / minFreq).log * (n - 1);
+		^levels.clipAt(k.round.asInteger)
+	}
+
 	prWanted {
 		^eq.notNil and: { eq.enabled } and: { eq.analysisAvailable }
 	}
