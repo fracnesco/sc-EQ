@@ -25,7 +25,7 @@ FxHintBar {
 	classvar <>defaultHeight = 22;
 
 	var <view, <text, <>defaultString;
-	var toggleBox;
+	var toggleBox, shown = true;
 
 	*new { |defaultString, height| ^super.new.init(defaultString, height) }
 
@@ -54,13 +54,15 @@ FxHintBar {
 		^this
 	}
 
-	// `hint` is a String, or a Function answering one. Answers `views`, so
-	// this can be wrapped around a control where it is built.
+	// `hint` is a String, or a Function answering one - given the view and the
+	// pointer's x and y in it, so a display can say what is under the pointer
+	// ({ |view, x, y| ... }; a function that takes nothing ignores them).
+	// Answers `views`, so this can be wrapped around a control where it is built.
 	attach { |views, hint|
 		views.asArray.do { |v|
 			v !? {
 				v.acceptsMouseOver = true;
-				v.mouseOverAction = { this.string_(hint.value) };
+				v.mouseOverAction = { |view, x, y| this.string_(hint.value(view, x, y)) };
 			};
 		};
 		^views
@@ -72,9 +74,12 @@ FxHintBar {
 
 	clear { this.string_(nil) }
 
-	visible { ^view.visible }
+	// kept here: a view in a window not yet shown answers false, and a
+	// checkbox made then would start unticked
+	visible { ^shown }
 
 	visible_ { |bool|
+		shown = bool;
 		view.visible = bool;
 		toggleBox !? { |b| b.value = bool };
 	}
@@ -84,8 +89,8 @@ FxHintBar {
 	// outside the bar, or folding it would take the way back with it.
 	toggle {
 		toggleBox ?? {
-			toggleBox = CheckBox().string_("hints").value_(view.visible)
-				.action_({ |v| view.visible = v.value });
+			toggleBox = CheckBox().string_("hints").value_(shown)
+				.action_({ |v| shown = v.value; view.visible = v.value });
 			this.attach(toggleBox, "this bar - untick to fold it away");
 		};
 		^toggleBox
