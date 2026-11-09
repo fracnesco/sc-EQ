@@ -16,6 +16,8 @@ FxPalette {
 	classvar <wave, <waveDim, <waveBg;
 	classvar <flash, <handle, <sel, <good, <clip, <peak;
 	classvar <eqBands;
+	classvar <card, <control, <controlHi;		// sc-fx-ui surfaces: a group's card, a control's body
+	classvar <gain, <cut, <ivory, identities, eqHandles;
 	classvar font, smallFont, boldFont, monoFont;
 
 	*initClass {
@@ -33,6 +35,36 @@ FxPalette {
 		good     = Color(0.40, 0.86, 0.60);
 		clip     = Color(0.95, 0.35, 0.30);
 		peak     = Color(0.95, 0.96, 0.98);
+		card     = Color(0.17, 0.17, 0.20);
+		control  = Color(0.25, 0.25, 0.29);
+		controlHi = Color(0.33, 0.33, 0.38);
+
+		// sc-fx-ui colours with one meaning each (never accent, clip, Tidal green or wave):
+		gain     = Color(0.92, 0.50, 0.96);	// gain change: what a dynamics effect does to the level
+		cut      = Color(0.72, 0.75, 0.84);	// what an eq's cuts take away
+		ivory    = Color(0.96, 0.92, 0.80);	// the eq's own colour: the summed curve, what you hear
+		// ParaEQ's handles, low to high, then its two cuts
+		eqHandles = [
+			Color(0.70, 0.54, 0.98), Color(0.40, 0.86, 0.80), Color(0.76, 0.90, 0.36),
+			Color(0.95, 0.82, 0.36), Color(0.95, 0.52, 0.74), cut, cut
+		];
+		// a family's identity: what the effect itself adds (a tail, echoes, grains,
+		// a held spectrum, ringing strings, gain change) - see the sc-fx-ui skill
+		identities = (
+			reverb:    Color(0.72, 0.60, 0.95),	// violet: a tail
+			hall:      Color(0.72, 0.60, 0.95),
+			plate:     Color(0.80, 0.78, 0.96),	// pale steel-lavender: a ringing sheet
+			coil:      Color(0.60, 0.58, 0.96),	// indigo-violet: a spring's chirps
+			shimmer:   Color(0.90, 0.62, 0.96),	// orchid-pink: a tail that climbs
+			delay:     Color(0.40, 0.86, 0.80),	// teal: repeats
+			spectral:  Color(0.95, 0.52, 0.74),	// pink: a held, moved spectrum
+			granular:  Color(0.88, 0.80, 0.60),	// sand: grains
+			repeat:    Color(0.95, 0.84, 0.38),	// yellow: a caught slice
+			resonator: Color(0.62, 0.62, 0.98),	// lilac-indigo: ringing strings
+			pitch:     Color(0.76, 0.90, 0.36),	// lime: a shifted partial
+			dynamics:  gain,
+			eq:        ivory
+		);
 
 		// The eq bands read left to right, so the colour says which end of
 		// the spectrum a handle belongs to before you have read its name.
@@ -50,6 +82,11 @@ FxPalette {
 	}
 
 	*eqBand { |i| ^eqBands.wrapAt(i.asInteger) }
+
+	*eqHandle { |i| ^eqHandles.clipAt(i.asInteger) }
+
+	// a family's identity colour (FxPalette.identity(\reverb)), or nil
+	*identity { |key| ^key !? { identities[key.asSymbol] } }
 
 	// ---------------------------------------------------------------- fonts
 
@@ -83,5 +120,142 @@ FxPalette {
 		if (GUI.id == \qt) { v.palette = QPalette.dark };
 		v.background = bg;
 		^window
+	}
+
+	// ---------------------------------------------------- values as words
+
+	// a colour at a fraction of its alpha, leaving the original alone
+	*fade { |c, a = 1| ^Color(c.red, c.green, c.blue, c.alpha * a) }
+
+	// x with exactly dec decimals: fixed(0.3, 2) is "0.30"
+	*fixed { |x, dec = 0|
+		var m, q, neg, whole, frac, f;
+		dec = dec.asInteger.max(0);
+		m = 10 ** dec;
+		q = (x.abs * m).round(1);
+		neg = (x < 0) and: { q > 0 };
+		whole = (q / m).floor.asInteger;
+		frac = (q - (whole * m)).round(1).asInteger.asString;
+		if (dec > 0 and: { frac.size < dec }) { frac = String.fill(dec - frac.size, $0) ++ frac };
+		f = if (dec > 0) { "." ++ frac } { "" };
+		^(if (neg) { "-" } { "" }) ++ whole.asString ++ f
+	}
+
+	// three significant figures
+	*sig3 { |x|
+		var a = x.abs;
+		^case
+		{ a >= 100 } { this.fixed(x, 0) }
+		{ a >= 10 } { this.fixed(x, 1) }
+		{ true } { this.fixed(x, 2) }
+	}
+
+	// a parameter's value as it is read under its knob, with its unit:
+	// "375 ms", "1.80 kHz", "-6.0 dB", "35 %". box is the table's (\pct, \ms);
+	// floorText is what the bottom of the range says when it means off
+	*format { |v, units, box, dec, bipolar = false, floorText, spec|
+		var u = units ? "", sign;
+		if (v.isNil) { ^"" };
+		if (floorText.notNil and: { spec.notNil } and: { v <= spec.minval }) { ^floorText };
+		sign = { |str, x| if (bipolar and: { x > 0 }) { "+" ++ str } { str } };
+		^case
+		{ box == \pct } { sign.(this.fixed(v * 100, dec ? 0), v) ++ " %" }
+		{ box == \ms or: { u == "s" } } {
+			if (v.abs < 1) {
+				this.fixed(v * 1000, if (v.abs < 0.01) { 1 } { 0 }) ++ " ms"
+			} {
+				this.fixed(v, 2) ++ " s"
+			}
+		}
+		{ u == "Hz" } {
+			// round first: 999.6 must read 1.00 kHz, not 1000 Hz; signed when bipolar or negative
+			var a = v.abs, str;
+			str = if (a.round(if (a < 100) { 0.01 } { 1 }) >= 1000) { this.sig3(a / 1000) ++ " kHz" } {
+				this.fixed(a, case { a < 10 } { 2 } { a < 100 } { 1 } { true } { 0 }) ++ " Hz"
+			};
+			case { v < 0 } { "-" ++ str } { bipolar and: { v > 0 } } { "+" ++ str } { true } { str }
+		}
+		{ box == \note } { this.midiName(v) }
+		{ u == ":1" } { this.fixed(v, if (v < 10) { 1 } { 0 }) ++ ":1" }
+		{ u == "dB" } { sign.(this.fixed(v, dec ? 1), v) ++ " dB" }
+		{ u.isEmpty } { sign.(this.fixed(v, dec ? 2), v) }
+		{ true } { sign.(this.fixed(v, dec ? 1), v) ++ " " ++ u }
+	}
+
+	// what someone typed into a value, back to the parameter's own unit:
+	// "2k" 2000 Hz, "350ms" 0.35 s, "35" 0.35 for a percent; nil if it is no number
+	*parse { |str, units, box|
+		var s = str.asString.toLower.reject(_.isSpace), num, u = units ? "", i = 0, midi;
+		if (s.isEmpty) { ^nil };
+		// a Tidal note name: a frequency where the unit is Hz, a note number for \note
+		if (u == "Hz" or: { box == \note }) {
+			midi = this.parseNote(s);
+			midi !? { ^if (box == \note) { midi } { midi.midicps } };
+		};
+		if ("^[-+]?[0-9.]".matchRegexp(s).not) {
+			^if (s == "off" or: { s == "-inf" }) { -inf } { nil }
+		};
+		// the number is the front of it: String:asFloat reads "2.5k" as 2, not 2.5
+		while {
+			i < s.size and: {
+				s[i].isDecDigit or: { s[i] == $. } or: { (i == 0) and: { (s[i] == $-) or: { s[i] == $+ } } }
+			}
+		} { i = i + 1 };
+		num = s.copyRange(0, i - 1).asFloat;
+		^case
+		{ box == \pct } { num / 100 }
+		{ box == \ms or: { u == "s" } } {
+			case
+			{ s.endsWith("ms") } { num / 1000 }
+			{ s.endsWith("s") } { num }
+			{ box == \ms } { num / 1000 }
+			{ true } { num }
+		}
+		{ s.endsWith("k") or: { s.endsWith("khz") } } { num * 1000 }
+		{ true } { num }
+	}
+
+	// ------------------------------------------------------- notes, as Tidal says them
+
+	// Tidal's names: note 0 is c5 is midi 60, sharps are s ("cs5"), so what a
+	// window shows is what a student types (# note "e2")
+	*midiName { |midi|
+		var n = midi.round.asInteger;
+		^#["c", "cs", "d", "ds", "e", "f", "fs", "g", "gs", "a", "as", "b"][n % 12] ++ (n div: 12).asString
+	}
+
+	*noteName { |freq| ^this.midiName(freq.max(1).cpsmidi) }
+
+	// "e2" "cs5" "c#5" "ef3" "bb2" "a" -> a midi number (octave 5 when not said), or nil
+	*parseNote { |str|
+		var s = str.asString.toLower.reject(_.isSpace), pc, idx, i = 1, acc = 0, oct = 5, rest;
+		if (s.isEmpty) { ^nil };
+		idx = "abcdefg".indexOf(s[0]);
+		if (idx.isNil) { ^nil };
+		pc = #[9, 11, 0, 2, 4, 5, 7][idx];
+		if (i < s.size) {
+			case
+			{ (s[i] == $s) or: { s[i] == $# } } { acc = 1; i = i + 1 }
+			{ ((s[i] == $f) or: { s[i] == $b }) and: { (i + 1) < s.size } and: { s[i + 1].isDecDigit or: { s[i + 1] == $- } } } { acc = -1; i = i + 1 }
+			{ ((s[i] == $f) or: { s[i] == $b }) and: { (i + 1) == s.size } } { acc = -1; i = i + 1 };
+		};
+		rest = s.copyRange(i, s.size - 1);
+		if (rest.notEmpty) {
+			if ("^-?[0-9]+$".matchRegexp(rest).not) { ^nil };
+			oct = rest.asInteger;
+		};
+		^(oct * 12) + pc + acc
+	}
+
+	// a word for where a frequency sits, for readouts and hints
+	*regionName { |freq|
+		^case
+		{ freq < 60 } { "sub" }
+		{ freq < 250 } { "bass" }
+		{ freq < 500 } { "low mids" }
+		{ freq < 2000 } { "mids" }
+		{ freq < 4000 } { "high mids" }
+		{ freq < 6000 } { "presence" }
+		{ true } { "air" }
 	}
 }
