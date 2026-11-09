@@ -97,6 +97,35 @@ so a curve saved on an Ndef's eq is in the menu of a OneShot pad's, and a curve
 copied on a pad pastes onto the master chain's. Your own presets are kept in
 link::#*presetFile::, in the support folder rather than the repository.
 
+subsection:: The levels a window shows
+
+A window - link::Classes/ParaEQGUI::, any link::Classes/ParaEQPanel:: - shows the
+peak going into the eq and coming out of it, beside the curve. While it is open it
+switches link::#-meter:: on, and the node says its levels link::#*meterRate:: times
+a second, tagged with link::#-id:: so each eq hears its own. The eq's own node and a
+chain's always can; a graph of your own only when it asks:
+
+code::
+Ndef(\pad, { var sig = Saw.ar([110, 110.7]) * 0.1; ParaEQ.ar(sig, \eq, meter: true) });
+::
+
+Left out, the graph is exactly the one it always was - and the replies change
+nothing in the sound either way: they sit beside the filters, silent until a window
+asks (proved by a null test of the old def against the new one: not one sample
+differs). SuperDirtGUI's eq insert is built with them. A holder of settings with no
+node - the compressor's sidechain eq - never has levels, and its window leaves the
+meters out.
+
+subsection:: The window's words
+
+The window says what a handle does rather than what filter it is: the high pass is
+the strong::low cut::, it takes the lows away; the low pass the strong::high cut::.
+A bell's width reads in octaves between the points where it has half its gain -
+link::#*bellOctaves::, 1.39 octaves at code::rq:: 1 - and a shelf's as its
+code::rs:: in percent. A cut's code::res:: is how its corner rings, -1 to 1:
+link::#*cutRes::, 0 the flat corner. The code is unchanged: link::#-qAt:: is still
+the code::rq:: or code::rs:: the server runs.
+
 CLASSMETHODS::
 
 METHOD:: ar
@@ -125,6 +154,15 @@ than switched - what link::#*synthDef:: and ModuleCommon's slot def do.
 ARGUMENT:: lag
 Seconds the bands are lagged by; link::#*lag:: if left out.
 
+ARGUMENT:: meter
+code::true:: adds the levels a window shows: the loudest channel going in and
+coming out, on code::'/paraeq'::, while code::name:: with code::Meter:: appended is
+1, tagged with code::name:: with code::Id:: appended - see "The levels a window
+shows" above. Nothing in the sound changes. Left out
+(code::false::), the graph is byte for byte the one it was before there were
+meters, which is what every graph written before them, the compressor's and
+ModuleCommon's still are.
+
 RETURNS:: The filtered signal, through link::Classes/Sanitize::.
 
 METHOD:: new
@@ -144,7 +182,58 @@ METHOD:: defName
 METHOD:: synthDef
 The in place synth for a channel count: code::In:: - link::#*ar:: - code::XOut::
 under an envelope, so switching in and out leaves the dry signal rather than
-silence.
+silence. It is built with the meter, silent until a window asks.
+
+METHOD:: meterRate
+How many times a second a node with the meter says its levels while a window shows
+them. 25.
+
+METHOD:: replyName
+code::'/paraeq'::, what the levels arrive on.
+
+METHOD:: meterName
+METHOD:: idName
+The meter's two controls for a control name: code::\eqMeter:: and code::\eqId:: for
+code::\eq::.
+ARGUMENT:: name
+
+METHOD:: title
+METHOD:: windowSize
+METHOD:: identityColour
+What its window is called (code::"eq"::), how big it opens (960 x 560) and its
+colour: ivory, the summed curve - the bands have the hues.
+
+METHOD:: shapeWord
+What the window calls a handle: code::"low shelf"::, code::"bell"::,
+code::"high shelf"::, code::"low cut"::, code::"high cut"::.
+ARGUMENT:: i
+
+METHOD:: cutWord
+code::"low cut":: for link::#*highPass::, code::"high cut":: for link::#*lowPass::.
+ARGUMENT:: i
+
+METHOD:: handleColour
+A handle's colour, low to high: violet, teal, lime, yellow, pink, and the cuts'
+silver - none of them a colour that means something else in the window.
+ARGUMENT:: i
+
+METHOD:: bellOctaves
+METHOD:: bellRq
+A bell's width in octaves between its half-gain points, from its code::rq:: at a
+frequency and a rate - RBJ's bandwidth with the bilinear warp, so it is the filter
+the server runs: 1.39 at code::rq:: 1, a little less near the top - and back.
+ARGUMENT:: rq
+ARGUMENT:: octaves
+ARGUMENT:: freq
+ARGUMENT:: sr
+
+METHOD:: cutRq
+METHOD:: cutRes
+A cut's corner as the window shows it, code::res:: -1 to 1, and the code::rq:: it
+runs on. 0 is 1.414, the flat corner; up to 1 rings, down to link::#*cutQLo::; down to -1 rounds
+off, up to 10. Logarithmic both ways.
+ARGUMENT:: res
+ARGUMENT:: rq
 
 METHOD:: numBands
 5 - the parametric bands.
@@ -213,7 +302,8 @@ How long a node of its own takes to fade in and out when it is switched. 0.02.
 METHOD:: presetNames
 Every preset, the ones the library ships first: code::\flat::, code::'rumble
 cut'::, code::\warm::, code::\bright::, code::\distant::, code::\loudness::,
-code::\telephone::, then yours.
+code::\telephone::, then three that use the cuts - code::\radio::, code::'kick
+weight'::, code::\air:: - then yours.
 
 METHOD:: presets
 METHOD:: userPresets
@@ -346,6 +436,15 @@ METHOD:: qAt
 One part of one handle, with a two argument setter each: code::dbAt_(4, 3)::. A
 cut has no gain, so its dB reads 0 and setting it does nothing.
 
+METHOD:: widthAt
+A band's width as the window shows it, with a two argument setter: a bell's in
+octaves (link::#*bellOctaves::, at the server's rate), a shelf's code::rs::. nil on a
+cut.
+
+METHOD:: resAt
+How much a cut's corner rings, -1 to 1 (link::#*cutRes::), with a two argument
+setter. nil on a band.
+
 METHOD:: slopeAt
 How hard the cut at that handle index cuts, in dB per octave, with a two argument
 setter: code::slopeAt_(5, 48)::. nil on a band, and setting it on one does nothing.
@@ -418,6 +517,36 @@ has no code::cuts:: and reads back as an eq with both of them out.
 
 METHOD:: sampleRate
 The server's, when it is up - what the curve is worked out at.
+
+METHOD:: meter
+Whether the node says its levels. A window switches it on while it is open and off
+when it closes; changed(\levels) on every reply.
+
+METHOD:: canMeter
+Whether there is anything that could say them: a node of its own, a chain, a driven
+target. A holder of settings never can.
+
+METHOD:: inLevel
+METHOD:: outLevel
+The peak going in and coming out, 0 .. 1 and over, while replies arrive; 0 once a
+node has stopped saying them (switched off, freed, paused).
+
+METHOD:: isAlive
+Whether a reply came in the last half second.
+
+METHOD:: hasReplied
+Whether anything came back since the meter was switched on: a graph built without
+code::meter: true:: never answers.
+
+METHOD:: lastReply
+When the last reply came, in code::Main.elapsedTime::.
+
+METHOD:: id
+The number this eq's node tags its replies with.
+
+METHOD:: meterName
+METHOD:: idName
+The meter's controls under this eq's control name.
 
 METHOD:: enabled
 METHOD:: gui

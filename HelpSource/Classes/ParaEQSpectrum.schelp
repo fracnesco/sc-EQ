@@ -84,6 +84,11 @@ METHOD:: peaks
 METHOD:: freqs
 What the view draws.
 
+METHOD:: levelAt
+The level now at a frequency, in dB - the band it falls in - or nil before the
+first frame: what the eq window's pointer readout says.
+ARGUMENT:: freq
+
 METHOD:: action
 Called with the spectrum whenever a frame has been taken.
 

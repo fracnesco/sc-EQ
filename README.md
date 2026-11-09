@@ -104,6 +104,19 @@ e.enabled = false;               // crossfades to dry; the graph does not know
 e.gui;
 ```
 
+The window's in and out meters need the graph to say its levels — add
+`meter: true`:
+
+```supercollider
+Ndef(\pad, { var sig = Saw.ar([110, 110.7]) * 0.1; ParaEQ.ar(sig, \eq, meter: true) });
+```
+
+It is a reply beside the filters, silent until a window asks: the sound is the
+same sample for sample (a null test of the graph with it against the graph
+without). Left out, the graph is the one it always was, and the window shows the
+meters at `-inf`, with a hint saying why. The eq's own node, a chain and
+SuperDirtGUI's eq insert are built with it.
+
 ## Either end taken off
 
 After the five bands come two cuts — a high pass and a low pass. They are
@@ -179,6 +192,11 @@ c.remove(c.units[0]);
 c.enabled = false;               // the whole chain out, whatever each effect says
 ```
 
+`c.gui` shows one effect at a time: a tab each, in the order the sound goes
+through them, and under the tabs the effect's own panel, as its own window has it.
+**earlier** and **later** move the one shown along the chain, **remove** takes it
+out; a dim tab is an effect that is off.
+
 The group is built after the default group when the server comes up and again
 after cmd + period, so the chain hears everything that plays, and whatever reads
 the bus at the tail — ServerPanel's meters, a recorder, Insight — hears the chain.
@@ -226,28 +244,65 @@ other.copyFrom(e);               // the same without the clipboard
 ## The window
 
 `e.gui`, or the same panel inside another window — the compressor's sidechain
-page, the master chain, a module's eq tab.
+page, the master chain, a module's eq tab. Every effect window of mine shares one
+frame — the header, a display with the meters at its right, titled cards, the
+same knob, the hint bar along the bottom — and each has its family's face. An
+eq's is one plane you play, and the controls under it reading low to high:
 
 ```
- [x] eq on  [x] spectrum  preset [warm v] [flat]  [name   ][save][delete]   [copy][paste]
- +--------------------------------------------------------------------------------+
- |  the curve, seven handles, and behind them the spectrum of what the eq is on   |
- +--------------------------------------------------------------------------------+
- [low shelf][peak 1][peak 2][peak 3][high shelf][high pass][low pass]
-                              freq [ 80] dB [-9.0] q [0.80] [x] in
- hover a control and this bar says what it does
+ (o) EQ   < warm *          v >  save  ...                       ±24 dB v  spectrum
+ +--------------------------------------------------------------------+ +--------+
+ | 3 · bell · 900 Hz · -3.0 dB · 1.88 oct           440 Hz · a5 · mids | | in out |
+ |    each band's fill in its colour, the cuts' silver veils, the sum | |  |   | |
+ |    in ivory, seven dots - and the spectrum of what leaves behind   | |  |   | |
+ | Hz  20   50   100   200   500   1k   2k   5k   10k   20k           | |        |
+ | note  c2    c3    c4    c5    c6    c7    c8    c9                 | |        |
+ +--------------------------------------------------------------------+ +--------+
+ | low cut         [in] |  | band 3 · bell     1 2 3 4 5 |  | high cut        [in] |
+ |  freq  slope  res    |  |  (( freq ))  (( gain ))  width |  |  freq  slope  res    |
+ hover a control and this bar says what it does                bus 4 · 2 ch · on
 ```
 
-- **drag a dot** for frequency and gain; a click picks up the nearest one, so a
-  dot never has to be hit exactly.
-- **cmd + drag up and down**, or the **wheel**, for the width of the selected band.
-  It is relative, so it never jumps.
-- **shift** while dragging snaps to round frequencies, whole dB, round widths.
-- **double click** a dot for 0 dB — or, on one of the two cuts, in and out.
-- The two cuts are the last handles, drawn as **rings** while they are out.
-  `in` is their switch; the dB box greys out on one, since a cut has no gain.
-- The line along the bottom says what the pointer is on. Untick **hints** to fold
-  it away.
+On the plane:
+
+- **drag a dot** — a band: frequency and gain. A cut: where it cuts, and up for a
+  corner that rings; on the 0 line it is flat.
+- a **press anywhere** takes the nearest dot without moving it, so a dot never has
+  to be hit exactly; every drag is relative, so nothing jumps.
+- **shift** is fine, a tenth of the movement — as on every knob.
+- the **wheel** on a dot: a band's width, up wider; a cut's slope, a step a notch.
+- **cmd + drag up and down** (ctrl elsewhere, or alt): the selected band's width,
+  or the selected cut's res, from wherever you press.
+- **double click** a dot: a band back to 0 dB, a cut in or out.
+- **right click** a dot: back to 0 dB, back to where it starts, type a frequency;
+  on a cut, in, its slope, a flat corner.
+- while a dot is dragged its values stand beside it; the strip along the top
+  names the selected dot, and its right end reads the pointer — the frequency,
+  the nearest note as Tidal says it (`a5` is 440 Hz, `e2` 41.2), the region and,
+  with the spectrum on, the level there. The row under the Hz marks Tidal's Cs.
+
+Under it, the cards in the order of the axis: the **low cut**, the **band**
+shown, the **high cut**. One band at a time, the way a channel strip shows its
+selected band — click its dot or its number. Each band has one colour — violet,
+teal, lime, yellow, pink, low to high — on its dot, its fill, its number and its
+knobs; the cuts are silver, the colour of what an eq takes away, and the line you
+hear is ivory. A bell's width reads in octaves, a shelf's in percent (100 % is the
+steepest shelf with no bump at its corner). Typing a frequency takes Hz (`2k`,
+`350`) or a note (`e2`).
+
+What does nothing at the moment looks like it: a cut that is out is a ring, and its
+knobs dim — out, it costs nothing; its `res` dims at 6 dB/oct, where there is no
+corner to ring; a band at 0 dB is the identity filter, so its frequency and width
+dim until its gain moves. An eq that is off dims the whole panel and stays editable.
+
+There is no mix and no output: an eq mixed with its own dry signal combs, and this
+one adds no gain stage of its own.
+
+The meters at the display's right are the peaks going in and out, read from the
+eq's node while a window is open — see [the levels](#in-a-graph-of-your-own) for a
+graph of your own. The header's `...` holds save as, delete, copy, paste, back to
+flat and the hints; at its right, how many dB the display shows (only the view —
+the bands keep their gains) and the spectrum switch.
 
 The curve is worked out in the language from the same coefficients the server
 runs, so what you see is the filter you get — not a sketch of it.
@@ -261,8 +316,8 @@ with a node of its own is read right after that node; an eq driving an Ndef is
 read on the Ndef's bus; an eq driving a plain Synth has no bus to read until you
 say which — `e.analysisBus = 16`.
 
-Nothing is analysed unless a window is showing it. The **spectrum** box is a
-class wide switch, `ParaEQSpectrum.on`, so it holds across windows and sessions.
+Nothing is analysed unless a window is showing it. The **spectrum** switch is a
+class wide one, `ParaEQSpectrum.on`, so it holds across windows and sessions.
 
 ## The module family
 
@@ -286,15 +341,17 @@ an Ndef leaves all of that to the Ndef.
 | file | what it holds |
 |------|---------------|
 | [classes/ParaEQ.sc](classes/ParaEQ.sc) | the filter as a UGen, the object that drives it, the bands, presets, clipboard, the curve's maths |
-| [classes/ParaEQView.sc](classes/ParaEQView.sc) | the response curve with a handle per band, over the spectrum |
+| [classes/ParaEQView.sc](classes/ParaEQView.sc) | the eq's display: the response, seven dots in their colours, the spectrum behind, the gestures |
 | [classes/ParaEQSpectrum.sc](classes/ParaEQSpectrum.sc) | what the eq is working on: one FFT, read back a frame at a time |
-| [classes/ParaEQGUI.sc](classes/ParaEQGUI.sc) | `ParaEQPanel`, the controls as one view, and `ParaEQGUI`, the window |
+| [classes/ParaEQGUI.sc](classes/ParaEQGUI.sc) | `ParaEQPanel`, header, display, meters and cards as one view, and `ParaEQGUI`, the window |
 | [classes/FxUnit.sc](classes/FxUnit.sc) | what an effect is: driving a node, owning a node, joining a chain, presets, the window hook |
 | [classes/FxChain.sc](classes/FxChain.sc) | a series of effects on a bus, the master chain, chain presets, server lifecycle |
-| [classes/FxChainGUI.sc](classes/FxChainGUI.sc) | `FxChainPanel` and `FxChainGUI`: the effects stacked, with their own panels |
+| [classes/FxChainGUI.sc](classes/FxChainGUI.sc) | `FxChainPanel` and `FxChainGUI`: a tab per effect, the one shown with its own panel |
 | [classes/FxPresetStore.sc](classes/FxPresetStore.sc) | named settings: the ones the library ships and yours, on disk |
 | [classes/FxHintBar.sc](classes/FxHintBar.sc) | the strip that says what the mouse is over |
 | [classes/FxPalette.sc](classes/FxPalette.sc) | the colours and fonts every effect window is drawn in |
+| [classes/FxWidgets.sc](classes/FxWidgets.sc) | the controls every effect window is built from: knob, choice, switch, pad, power, button, card, meter, header |
+| [classes/FxDeviceGUI.sc](classes/FxDeviceGUI.sc) | the window every effect opens in: its panel and the one-line footer |
 | [HelpSource/Classes/](HelpSource/Classes/) | the help files, cmd/ctrl + d on a class name |
 | [examples/paraeq-demo.scd](examples/paraeq-demo.scd) | a walkthrough you can evaluate a block at a time |
 | [install.scd](install.scd) | symlinks the repository into the extensions folder |

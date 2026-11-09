@@ -4,9 +4,11 @@ categories:: Libraries>ParaEQ
 related:: Classes/ParaEQ, Classes/ParaEQPanel, Classes/FxHintBar
 
 DESCRIPTION::
-A link::Classes/ParaEQPanel::, a status line saying where the eq is running, and
-a link::Classes/FxHintBar:: under it. What code::eq.gui:: opens; closing it stops
-the analyser and leaves the eq itself untouched.
+A link::Classes/ParaEQPanel:: in the window every effect has (FxDeviceGUI, 960 x
+560): the panel, and one line along the bottom - the hint at the left, where the eq
+is running at the right ("bus 4 · 2 ch · on"). What code::eq.gui:: opens. While it
+is open the analysis runs and the eq's node says its levels; closing it stops both
+and leaves the eq itself untouched.
 
 code::
 e = ParaEQ.onBus(0, 2);
@@ -17,15 +19,20 @@ e.guiObj.close;
 CLASSMETHODS::
 
 METHOD:: new
-ARGUMENT:: eq
+ARGUMENT:: unit
+The link::Classes/ParaEQ::.
 ARGUMENT:: x
 ARGUMENT:: y
 
 INSTANCEMETHODS::
 
 METHOD:: eq
+The link::Classes/ParaEQ:: shown - the same as code::unit::.
+METHOD:: unit
 METHOD:: window
 METHOD:: panel
+The link::Classes/ParaEQPanel::.
 METHOD:: hints
+The link::Classes/FxHintBar:: along the bottom.
 METHOD:: front
 METHOD:: close

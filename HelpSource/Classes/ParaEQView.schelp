@@ -1,41 +1,53 @@
 TITLE:: ParaEQView
-summary:: the response curve of an eq, its band handles and its two cuts
+summary:: the response of an eq and its seven dots: the eq's display, the one you play
 categories:: Libraries>ParaEQ
 related:: Classes/ParaEQ, Classes/ParaEQPanel, Classes/ParaEQSpectrum
 
 DESCRIPTION::
-The five bands as five dots on a frequency / gain plane, over the curve they add
-up to, each band's own share filled under it, and after them the two cuts - the
-high pass marked strong::H::, the low pass strong::L:: - as two more dots on the
-flat line. A cut that is out is drawn as a ring rather than a dot: still there
-to take hold of, and saying at a glance that it is doing nothing. Behind them,
-when the view has been given a link::Classes/ParaEQSpectrum::, the spectrum of
-what the eq is working on. This is the middle of link::Classes/ParaEQPanel::; a
-window that wants only the curve can make one on its own.
+One plane, frequency along (log, 20 Hz to 20 kHz) and gain up. On it, each band's
+lift or cut is a fill in the band's colour, each cut that is in a silver veil over
+what it takes away, and the sum of them all - what you hear - one ivory line. Seven
+dots to take hold of: the five bands, numbered 1 to 5 low to high, in their colours,
+and the two cuts, a silver dot at each end marked with its own shape - the low cut
+climbing out of the lows, the high cut falling into the highs. A cut that is out is
+a ring: still there to take hold of, and saying at a glance that it does nothing.
+
+Behind them, when the view has been given a link::Classes/ParaEQSpectrum::, the
+spectrum of what leaves the eq, on a level scale of its own. A strip along the top
+names the selected dot in its colour; its right end reads the pointer - the
+frequency, the nearest note as Tidal says it (note 0 is code::c5::, 261.6 Hz, so
+code::a5:: is 440 and code::e2:: 41.2), the region and, with the spectrum on, the
+level there. Under the Hz the Cs of Tidal's octaves, code::c2:: to code::c9::. This
+is the middle of link::Classes/ParaEQPanel::; a window that wants only the curve can
+make one on its own.
 
 code::
-v = ParaEQView(parent);
-v.eq = someParaEQ;
-v.spectrum = ParaEQSpectrum(someParaEQ);
+(
+w = Window("curve", Rect(100, 100, 700, 300)).front;
+v = ParaEQView(w, w.view.bounds.insetBy(8));
+v.eq = ParaEQ.new.preset_(\warm);
+)
 ::
 
 definitionList::
-## drag || frequency and gain of the nearest band - a dot never has to be hit exactly
-## cmd + drag up / down || the width of the emphasis::selected:: band, from wherever you press. code::alt:: does the same
-## the wheel || the width again
-## shift while dragging || snap to round frequencies, whole dB, round widths
-## double click a dot || that band back to 0 dB - or, on one of the two cuts, in and out
+## drag a dot || a band: frequency and gain. A cut: where it cuts, and up for a corner that rings (its res - flat on the 0 line)
+## press anywhere || takes the nearest dot without moving it, so a dot never has to be hit exactly; a drag then moves it
+## shift || fine: a tenth of the movement, dragging or on the wheel
+## the wheel on a dot || a band's width, up wider - a cut's slope, a step a notch. Off any dot it works the selected one
+## cmd + drag up / down || the selected band's width, or the selected cut's res, from wherever you press. code::ctrl:: or code::alt:: do the same
+## double click a dot || a band back to 0 dB - a cut in or out
+## right click a dot || a menu: back to 0 dB, back to where it starts, type a frequency - on a cut: in, its slope, a flat corner
 ::
 
-A cut has no gain, so dragging one moves it along the frequency axis alone and
-the height of the mouse means nothing to it.
-
-The width drag is relative - it starts from the width the band already has
-rather than from where the mouse landed - so it never jumps on the first pixel.
+Every drag is relative - from where the dot was, not where the mouse landed - so
+nothing jumps on the first pixel. While a dot is dragged its values stand beside it
+in accent and in the hint bar. A band pushed past the edge of the plane (see
+link::#-range::) waits there with an arrow; nothing about it changes.
 
 The curve is worked out from the same coefficients the server runs, see
-link::Classes/ParaEQ#*coeffs::, and kept between redraws: with an analyser
-running the view redraws twenty times a second.
+link::Classes/ParaEQ#*coeffs::, and kept between redraws: with an analyser running
+the view redraws fifteen times a second, and seven filters over a few hundred
+frequencies is not work to do that often.
 
 CLASSMETHODS::
 
@@ -44,22 +56,34 @@ ARGUMENT:: parent
 ARGUMENT:: bounds
 
 METHOD:: grabRadius
-How near a dot a double click has to land. 10.
+How near a dot the pointer has to be to count as on it: the double click, the
+wheel, the hover. 20.
 
 METHOD:: widthPerPixel
 How much of the width one pixel of a cmd drag is worth. 1.02.
 
+METHOD:: lastRange
+The height the next view opens at, in dB either side of flat: the last one chosen.
+
+METHOD:: ranges
+The heights a view can show: code::[6, 12, 24]::.
+
 METHOD:: freqSnap
 METHOD:: shelfQSnap
 METHOD:: peakQSnap
-What shift snaps to.
+What shift snapped to before it meant fine. Kept for anyone who reads them.
 
 METHOD:: isWidthMod
-Which modifier keys mean "width, not position".
+Which modifier keys mean "width, not position": cmd on macOS, ctrl elsewhere, alt
+everywhere (QtCollider hands every platform Cocoa's bits).
 
 METHOD:: handleLabel
-What a handle is marked with: the bands numbered 1 to 5, the cuts lettered
-code::"H":: and code::"L"::.
+What a handle is called in a word: the bands numbered 1 to 5, the cuts code::"/"::
+and code::"\\"::.
+
+METHOD:: font
+METHOD:: boldFont
+The 9 pt fonts the dots and axes use.
 
 INSTANCEMETHODS::
 
@@ -67,16 +91,49 @@ METHOD:: view
 The link::Classes/UserView::.
 
 METHOD:: eq
-The link::Classes/ParaEQ:: drawn.
+The link::Classes/ParaEQ:: drawn, or nil for an empty plane.
 
 METHOD:: spectrum
 A link::Classes/ParaEQSpectrum::, or nil for the curve alone.
 
 METHOD:: selected
-The handle being worked on, 0 to link::Classes/ParaEQ#*numHandles:: - 1. Setting
-it from outside reaches the panel's number boxes too.
+The handle being worked on, 0 to link::Classes/ParaEQ#*numHandles:: - 1. It lives
+here and nowhere else, so setting it from outside reaches a panel's cards too.
 
 METHOD:: action
-Called with the view and code::\select:: when the selection changes.
+Called with the view and code::\select:: when the selection changes, and with
+code::\range:: when the height does.
+
+METHOD:: hoverAction
+Called with the view and the handle under the pointer, or nil, as it changes: a
+panel lights that band's number and knobs.
+
+METHOD:: editAction
+Called with the view and a handle when its menu asks to type a frequency.
+
+METHOD:: hot
+A handle to ring because its knob is under the pointer, or nil.
+
+METHOD:: hover
+The handle under the pointer, or nil.
+
+METHOD:: range
+How many dB either side of flat the plane shows: 6, 12 or 24. Only the view: the
+bands keep their gains.
+
+METHOD:: hints
+A hint bar (link::Classes/FxHintBar::, the module family's ModuleHintBar ...) the
+view writes to itself as the pointer moves and a dot is dragged. A bar's own
+code::attach:: would take over the pointer the view follows, so do not attach this
+view to it.
+
+METHOD:: hint
+What the hint bar says with the pointer here.
+ARGUMENT:: x
+ARGUMENT:: y
+RETURNS:: a link::Classes/String::
+
+METHOD:: isDragging
+Whether a dot is being dragged.
 
 METHOD:: refresh

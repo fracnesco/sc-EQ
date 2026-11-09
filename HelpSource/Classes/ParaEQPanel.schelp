@@ -1,37 +1,66 @@
 TITLE:: ParaEQPanel
-summary:: an eq's controls as one view
+summary:: an eq's controls as one view: header, response, meters, the cards in frequency order
 categories:: Libraries>ParaEQ
 related:: Classes/ParaEQ, Classes/ParaEQGUI, Classes/ParaEQView, Classes/ParaEQSpectrum, Classes/FxHintBar
 
 DESCRIPTION::
 What every window that shows an eq is built from: the eq's own window, the
 compressor's sidechain page, the master chain in ServerPanel, the module family's
-eq tab.
+eq tab. The frame every effect window shares - the header, a display with the
+meters at its right, titled cards, the knobs and their gestures - with an
+equaliser's face. From the top: the header (power, the name in ivory, the presets, save, the
+code::...:: menu, then the display's height and the spectrum switch); the response
+with the meters at its right; three cards - the low cut, the band shown with its
+1 2 3 4 5 selector, the high cut.
+
+strong::One plane you play.:: The link::Classes/ParaEQView:: is the instrument:
+drag a dot, wheel on it, double click it. Every gesture is there.
+
+strong::The cards read low to high,:: under the axis they work on: the low cut, the
+band shown, the high cut. One band at a time, the way a channel strip shows its
+selected band - click a dot or a number in the selector. Each band's colour is the
+same on its dot, its fill, its number and its knobs' arcs; a bell's width reads in
+octaves, a shelf's in percent (100 % is the steepest shelf with no bump at its
+corner).
+
+strong::The cuts are switches with slopes.:: code::in:: on the title line puts one
+in; out, as every builtin preset but code::radio::, code::'kick weight'::
+and code::air:: leaves them, its knobs dim and its dot is a ring - it does nothing
+and costs nothing. code::res:: is how the corner rings: 0 the flat Butterworth
+corner, up rings, down rounds it off; it dims at 6 dB/oct, where there is no corner
+to ring. A band at 0 dB is the identity filter, so its frequency and width dim
+until its gain moves.
+
+strong::No mix, no output.:: An eq mixed with its own dry signal combs, which is why
+equalisers have no mix; and ParaEQ adds no gain stage of its own, so the band card
+takes that width.
+
+The meters at the right are the levels going in and out of the eq, read from its
+node while the panel is running - see link::Classes/ParaEQ#-meter::. A panel on an
+eq with nothing to read them from (a holder of settings, as the compressor's
+sidechain eq is) leaves them out.
+
+Typing a frequency takes Hz (code::2k::, code::350::) or a Tidal note
+(code::e2:: is 41.2 Hz, code::a5:: 440). The header's code::...:: menu holds save
+as, delete, copy, paste, back to flat and the hints; at its right, the display's
+height and the spectrum switch, one for every eq window.
+
+It follows one link::Classes/ParaEQ:: and can be pointed at another, which is how a
+module window shows the eq of whichever pad is selected:
 
 code::
- [x] eq on  [x] spectrum  preset [warm v] [flat]  [name   ][save][delete]   [copy][paste]
- +------------------------------------------------------------------------------+
- |  the curve, seven handles, the analysis behind them                          |
- +------------------------------------------------------------------------------+
- [low shelf][peak 1][peak 2][peak 3][high shelf][high pass][low pass]
-                              freq [ 80] dB [-6.0] q [0.80] [x] in
-::
-
-The last two handles are the cuts. code::in:: is their switch and the one
-control in the row that only they have: a band is always in, and it is its gain
-that says what it does. The dB box greys out while a cut is selected, since a
-cut has no gain.
-
-It follows one link::Classes/ParaEQ:: and can be pointed at another, which is
-how a module window shows the eq of whichever pad is selected:
-
-code::
-panel = ParaEQPanel(eq);
-window.layout = VLayout(panel.view, hints.view);
-panel.hints = hints;          // labels every control
-panel.running = true;         // the analysis, while the panel is showing
-panel.eq = otherEq;
-panel.remove;                 // in window.onClose
+(
+e = ParaEQ.new.preset_(\warm);
+w = Window("eq", Rect(100, 100, 960, 520)).front;
+p = ParaEQPanel(e);
+h = FxHintBar();
+w.layout = VLayout(p.view, h.view);
+h.watch(w);
+p.hints = h;                  // labels every control
+p.running = true;             // the analysis and the meters, while it is showing
+w.onClose = { p.remove };
+);
+p.eq = ParaEQ.new.preset_(\loudness);
 ::
 
 CLASSMETHODS::
@@ -42,12 +71,16 @@ ARGUMENT:: parent
 ARGUMENT:: subject
 What the hints call the thing being shaped - "this pad", "the sidechain".
 ARGUMENT:: showOnBox
-code::false:: leaves the on switch out, for a window that has one of its own.
+code::false:: leaves the power button out, for a window that has one of its own.
+ARGUMENT:: compact
+code::true:: for a host short of height: the band's knobs medium rather than big,
+and a lower display. About 270 px tall at the least, against 336.
 
 INSTANCEMETHODS::
 
 METHOD:: eq
-The eq shown. The view, the analyser and the boxes all follow it.
+The eq shown. The display, the analyser, the meters, the header and the cards all
+follow it; nil leaves an empty panel.
 
 METHOD:: view
 The panel.
@@ -58,16 +91,37 @@ The link::Classes/ParaEQView:: in the middle.
 METHOD:: spectrum
 The link::Classes/ParaEQSpectrum:: behind the curve.
 
+METHOD:: meter
+The FxMeter at the display's right.
+
+METHOD:: header
+The FxHeader along the top: power, name, presets, save, the code::...:: menu.
+
 METHOD:: running
-Whether the analysis runs. A window sets it while the panel is showing.
+Whether the analysis runs and the eq's node says its levels. A window sets it while
+the panel is showing; false switches both off.
 
 METHOD:: hints
-A link::Classes/FxHintBar:: to label every control.
+A link::Classes/FxHintBar:: to label every control. The display writes to it itself.
+
+METHOD:: subject
+What the hints call the thing being shaped.
 
 METHOD:: selected
-The handle the boxes are on - one of the five bands, or one of the two cuts.
+The handle being worked on - one of the five bands, or one of the two cuts.
+
+METHOD:: shownBand
+The band the band card shows, 0 to 4. Selecting a cut leaves it where it was.
+
+METHOD:: widgets
+Every control the panel draws, for a check or a picture: the spectrum switch, the
+range menu, the band selector, the cuts' switches, freqs, slopes and res, then the
+five bands' freqs, gains and widths.
+
+METHOD:: isClosed
 
 METHOD:: refresh
 
 METHOD:: remove
-Stops listening to the eq and frees the analyser. In the window's onClose.
+Stops listening to the eq, frees the analyser and switches the meter off. In the
+window's onClose.
