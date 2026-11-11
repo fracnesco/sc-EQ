@@ -62,6 +62,7 @@ FxPalette {
 			repeat:    Color(0.95, 0.84, 0.38),	// yellow: a caught slice
 			resonator: Color(0.62, 0.62, 0.98),	// lilac-indigo: ringing strings
 			pitch:     Color(0.76, 0.90, 0.36),	// lime: a shifted partial
+			stereo:    Color(0.98, 0.78, 0.58),	// apricot: the image, the side an imager adds
 			dynamics:  gain,
 			eq:        ivory
 		);
