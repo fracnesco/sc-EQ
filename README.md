@@ -4,6 +4,8 @@
 a UGen does, driven by an object that runs anywhere sclang does.** A
 SuperCollider extension.
 
+![ParaEQ's window](images/paraeq.png)
+
 Write `ParaEQ.ar` into a graph of your own — an Ndef, a SynthDef — and drive its
 bands from an object with a window: the curve, seven handles, the spectrum of
 the signal behind them, presets, a clipboard. The same object can own a synth on
@@ -356,6 +358,7 @@ an Ndef leaves all of that to the Ndef.
 | [examples/paraeq-demo.scd](examples/paraeq-demo.scd) | a walkthrough you can evaluate a block at a time |
 | [install.scd](install.scd) | symlinks the repository into the extensions folder |
 | [sc-eq.quark](sc-eq.quark) | the quark manifest, named after the repository so `Quarks` can find it |
+| [images/](images/) | the screenshots in this README |
 
 ## Issues
 
