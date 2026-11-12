@@ -68,7 +68,7 @@ ARGUMENT:: controlName
 The control prefix on it; the subclass's link::#*controlName:: if left out.
 
 METHOD:: onBus
-A node of its own, in place on a bus. Nothing is built until it is switched on.
+A node of its own, in place on a bus. Nothing is built until it is switched on. Evaluating the same line again replaces the unit it made before, as an Ndef does: one unit per server, bus, class, control name, target and add action, and making another in that place frees the one before. Give a different code::controlName:: or target to keep two. A freed unit makes no node again; it warns once when asked to. A unit switched on comes back after a cmd-period or a reboot, until it is freed: keep it in a variable to free it.
 
 ARGUMENT:: bus
 An index, a link::Classes/Bus::, or - with BusManager installed - a name.
@@ -77,6 +77,8 @@ ARGUMENT:: target
 ARGUMENT:: addAction
 Where the node goes in the tree; the tail of the default group by default.
 ARGUMENT:: server
+ARGUMENT:: controlName
+Only tells two units of one class apart in the same place; the subclass's link::#*controlName:: if left out. The node itself reads the subclass's control whatever is given here.
 
 METHOD:: controlName
 METHOD:: fade

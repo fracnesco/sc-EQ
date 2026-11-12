@@ -597,6 +597,7 @@ ParaEQ : FxUnit {
 	// nothing to say about them.
 	target_ { |node|
 		var held;
+		if (this.isFreed) { ^super.target_(node) };	// which warns and does nothing
 		super.target_(node);
 		if (meterOn) { if (this.canMeter) { this.prPushMeter; this.prListen } { this.prUnlisten } };
 		if (node.isNil) { ^this };
@@ -847,7 +848,7 @@ ParaEQ : FxUnit {
 	asDict { ^(enabled: enabled, bands: bands.deepCopy, cuts: cuts.deepCopy) }
 
 	fromDict { |d|
-		if (d.isNil) { ^this };
+		if (d.isNil or: { this.prIsFreed }) { ^this };
 		d[\bands] !? { |v| this.bands_(v) };
 		d[\settings] !? { |v| this.bands_(v) };
 		d[\cuts] !? { |v| this.cuts_(v) };

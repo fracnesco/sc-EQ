@@ -63,7 +63,7 @@ ParaEQSpectrum {
 	var <freqs;							// and the frequency each one sits at
 	var buffer, synth, responder, task;
 	var running = false, serverWasUp = false, bufPending = false;
-	var trackedTarget, trackedBus, trackedChannels, lastFrame = 0;
+	var trackedTarget, trackedBus, trackedChannels, lastFrame = 0, madeAt = 0;
 	var frame, edges, fetchCount, fetching = false, chunksLeft = 0, fetchStart = 0;
 
 	*initClass {
@@ -200,26 +200,46 @@ ParaEQSpectrum {
 		var server = this.server;
 		if (server.isNil) { ^this };
 		this.prClear;
+		// fixed, so cmd-period leaves it listening
 		responder ?? {
-			responder = OSCFunc({ |msg| this.prChunk(msg) }, '/b_setn', server.addr);
+			responder = OSCFunc({ |msg| this.prChunk(msg) }, '/b_setn', server.addr).fix;
 		};
-		task ?? {
-			task = Routine({
-				var tick = 0;
-				var every = (ParaEQSpectrum.pollRate
-					/ ParaEQSpectrum.syncRate.clip(0.2, 10)).round.asInteger.max(1);
-				loop {
-					if ((tick % every) == 0) { this.prSync };
-					if (synth.notNil and: { this.visible }) { this.prFetch };
-					tick = tick + 1;
-					(1 / ParaEQSpectrum.pollRate.clip(1, 60)).wait;
-				};
-			}).play(AppClock);
-		};
+		task ?? { this.prStartTask };
+		CmdPeriod.add(this);
 		this.prSync;
 	}
 
+	prStartTask {
+		task = Routine({
+			var tick = 0;
+			var every = (ParaEQSpectrum.pollRate
+				/ ParaEQSpectrum.syncRate.clip(0.2, 10)).round.asInteger.max(1);
+			loop {
+				if ((tick % every) == 0) { this.prSync };
+				if (synth.notNil and: { this.visible }) { this.prFetch };
+				tick = tick + 1;
+				(1 / ParaEQSpectrum.pollRate.clip(1, 60)).wait;
+			};
+		}).play(AppClock);
+	}
+
+	// cmd-period: the clock dropped the task (or will not, if it keeps
+	// its clocks: then it is stopped here) and the server takes the
+	// analyser node, so both are made again. A buffer or def being waited
+	// for died with its clock: those are asked for again too. The task
+	// starts at once; a node made before the tree is back gets no frames,
+	// and prSync's watchdog makes it again
+	cmdPeriod {
+		task !? (_.stop);
+		task = nil;
+		bufPending = false;
+		this.server !? { |sv| ParaEQSpectrum.prDefsGone(sv) };
+		this.prFreeNode(false);
+		if (running) { this.prStartTask };
+	}
+
 	prStop {
+		CmdPeriod.remove(this);
 		task !? (_.stop);
 		task = nil;
 		responder !? (_.free);
@@ -262,17 +282,33 @@ ParaEQSpectrum {
 		if (place.isNil or: { bus.isNil }) { ^this.prFreeNode(false) };
 		tgt = place[0];
 
-		// the eq's node was rebuilt, or it was given another bus
+		// the eq's node was rebuilt, or it was given another bus. Nodes are
+		// compared by id and server: a host may answer a new Group object
+		// for the same group every time it is asked
 		if (synth.notNil and: {
-			(trackedTarget !== tgt) or: { trackedBus != bus } or: { trackedChannels != chans }
+			(trackedTarget != tgt) or: { trackedBus != bus } or: { trackedChannels != chans }
 		}) {
 			// a node that has gone cannot be told to free the analyser after it
-			this.prFreeNode(trackedTarget === tgt or: { tgt.isKindOf(Group) });
+			this.prFreeNode(trackedTarget == tgt or: { tgt.isKindOf(Group) });
 		};
 
 		if (buffer.isNil) { ^this.prAllocBuffer(server) };
 		if (ParaEQSpectrum.prEnsureDef(server, chans).not) { ^this };
 		if (synth.isNil) { ^this.prMakeNode(server, tgt, place[1], bus, chans) };
+
+		// no frame for 2 s, or a node not playing 2 s after it was made: it
+		// never started (its target was gone, the tree not back yet after
+		// cmd-period) or went. Frames alone cannot tell: they are reads of the
+		// buffer, which answers with the node gone. Made again - at most every
+		// 2 s, since making it starts both clocks again. Only a node the
+		// server said it started is told to free
+		if ((Main.elapsedTime - lastFrame) > 2.0 or: {
+			server.notified and: { synth.isPlaying.not }
+				and: { (Main.elapsedTime - madeAt) > 2.0 }
+		}) {
+			this.prFreeNode(synth.isPlaying);
+			^this.prMakeNode(server, tgt, place[1], bus, chans)
+		};
 
 		// a frame should have arrived by now; if none has, let the trace go
 		// rather than leave it standing where the sound stopped
@@ -309,17 +345,20 @@ ParaEQSpectrum {
 		trackedBus = bus;
 		trackedChannels = chans;
 		lastFrame = Main.elapsedTime;
+		madeAt = lastFrame;
 		synth = Synth(ParaEQSpectrum.defName(chans), [
 			\bus, bus,
 			\fft, buffer.bufnum
 		], tgt, addAction);
+		synth.register;		// isPlaying once the server says /n_go
 	}
 
 	// `alive` says whether the node is still there to be freed: after a
 	// cmd + period it is not, and asking the server to free it again only
-	// gets a failure line back.
+	// gets a failure line back - and no /n_end comes to take it off the
+	// NodeWatcher, so it is taken off here.
 	prFreeNode { |alive = true|
-		if (alive) { synth !? (_.free) };
+		synth !? { |sy| if (alive) { sy.free } { NodeWatcher.unregister(sy) } };
 		synth = nil;
 		trackedTarget = nil;
 		trackedBus = nil;

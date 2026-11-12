@@ -40,6 +40,7 @@
 
 FxUnit {
 	classvar defs, sent, quitHooks;
+	classvar onBusUnits;			// [server, bus, class, controlName, target id, addAction] -> the unit there
 
 	var <enabled = false;
 	var <target;				// the node it drives, in driver mode - nil otherwise
@@ -53,11 +54,17 @@ FxUnit {
 	var <label;					// what a window calls it
 	var <guiObj;
 	var <>onFree;
+	var treeFunc, quitFunc;		// a node of its own comes back after cmd-period and a reboot
+	var treeServer;				// the server those two were added for
+	var busKey;					// its place in onBusUnits
+	var warnedGone = false;		// a node that would not start says so once
+	var freed = false, warnedFreed = false;	// freed or replaced: it does nothing more, and says so once
 
 	*initClass {
 		defs = IdentityDictionary.new;
 		sent = IdentityDictionary.new;
 		quitHooks = IdentityDictionary.new;
+		onBusUnits = Dictionary.new;
 	}
 
 	// --------------------------------------------------------- what to build
@@ -92,9 +99,11 @@ FxUnit {
 
 	// A node of its own, in place on a bus. `target` and `addAction` say
 	// where it goes in the tree; the tail of the default group by default.
-	// Nothing is built until it is switched on.
-	*onBus { |bus = 0, numChannels = 2, target, addAction = \addToTail, server|
-		^this.new(nil).prInitOnBus(bus, numChannels, target, addAction, server)
+	// Nothing is built until it is switched on. `controlName` only tells
+	// two units of a class apart in one place (see prInitOnBus): the in
+	// place def reads the class's control whatever it is.
+	*onBus { |bus = 0, numChannels = 2, target, addAction = \addToTail, server, controlName|
+		^this.new(nil).prInitOnBus(bus, numChannels, target, addAction, server, controlName)
 	}
 
 	init { |argTarget, argControlName|
@@ -108,16 +117,28 @@ FxUnit {
 	// a subclass sets its defaults here
 	prInitSettings { }
 
-	prInitOnBus { |argBus, argChannels, argTarget, addAction, argServer|
+	prInitOnBus { |argBus, argChannels, argTarget, addAction, argServer, argName|
 		bus = FxUnit.prBusIndex(argBus) ? 0;
 		numChannels = (argChannels ? 2).asInteger.clip(1, 64);
 		server = argServer ?? { argTarget.tryPerform(\server) } ?? { Server.default };
 		placement = [argTarget, addAction ? \addToTail];
 		enabled = false;
+		// one unit of a kind on a bus: evaluating the same line again
+		// replaces the old one, as an Ndef or an FxChain of a name does,
+		// rather than leaving it to come back after every cmd-period.
+		// Another control name, target or add action is another place
+		busKey = this.class.prBusKey(server, bus, (argName ? controlName).asSymbol, argTarget, addAction);
+		onBusUnits[busKey] !? { |old| if (old !== this) { old.free } };
+		onBusUnits[busKey] = this;
+		this.prWatchTree;
 		^this
 	}
 
 	free {
+		if (freed) { ^this };
+		freed = true;
+		this.prUnwatchTree;
+		this.prForgetBusKey;
 		this.prFreeNode;
 		guiObj !? (_.close);
 		chain !? (_.remove(this));
@@ -134,6 +155,7 @@ FxUnit {
 	// has been set, in which case those are taken over.
 	target_ { |node|
 		var map, held;
+		if (this.prIsFreed) { ^this };
 		target = node;
 		if (node.isNil) { ^this };
 		server = node.tryPerform(\server) ? Server.default;
@@ -163,6 +185,7 @@ FxUnit {
 
 	enabled_ { |bool|
 		bool = bool.booleanValue;
+		if (this.prIsFreed) { ^this };
 		if (bool == enabled) { ^this };
 		enabled = bool;
 		this.prEnabledChanged;
@@ -170,6 +193,21 @@ FxUnit {
 	}
 
 	isActive { ^enabled }
+
+	// A freed unit - by hand, or replaced by a newer one on its bus - makes
+	// no node again: one it made now would be nobody's, back after every
+	// cmd-period. It says so the first time it is asked
+	prIsFreed {
+		if (freed.not) { ^false };
+		if (warnedFreed.not) {
+			warnedFreed = true;
+			("%: it was freed (or replaced by another on its bus) - "
+				++ "make a new one").format(label).warn;
+		};
+		^true
+	}
+
+	isFreed { ^freed }
 
 	prEnabledChanged {
 		case
@@ -208,15 +246,45 @@ FxUnit {
 	// first and this comes back once it has arrived.
 	prSyncNode {
 		var tgt, act;
+		if (this.prIsFreed) { ^this };
 		if (chain.notNil) { ^chain.prSyncUnit(this) };
 		if (placement.isNil or: { server.isNil }) { ^this };
 		if (enabled.not) { ^this.prFreeNode };
 		if (synth.notNil) { ^this };
 		if (server.serverRunning.not) { ^this };
-		if (this.class.prEnsureDef(server, numChannels, { this.prSyncNode }).not) { ^this };
+		// queued: quiet if the unit was freed meanwhile
+		if (this.class.prEnsureDef(server, numChannels, { if (freed.not) { this.prSyncNode } }).not) { ^this };
 		tgt = placement[0] ?? { server.defaultGroup };
 		act = placement[1] ? \addToTail;
 		this.prMakeNode(tgt, act);
+		this.prWatchNode(synth);
+	}
+
+	// A node of its own that ends (freed by hand, its group freed) or never
+	// starts (its target gone) leaves `synth` nil, so the next enabled_ or
+	// tree makes it again. Whether it started is known after a sync: the
+	// server says /n_go before it answers /synced.
+	prWatchNode { |sy|
+		if (sy.isNil) { ^this };
+		// not notified: no /n_go and no /n_end either, so nothing to watch
+		if (server.tryPerform(\notified) == false) { ^this };
+		sy.onFree { if (synth === sy) { synth = nil; this.changed(\node) } };
+		{
+			server.sync;
+			if (synth === sy and: { sy.isPlaying.not }) {
+				synth = nil;
+				sy.releaseDependants;
+				NodeWatcher.unregister(sy);
+				this.changed(\node);
+				if (warnedGone.not) {
+					warnedGone = true;
+					("%: its node did not start (where it was to go is gone) - "
+						++ "switch it off and on to try again").format(label).warn;
+				};
+			} {
+				if (synth === sy) { warnedGone = false };
+			};
+		}.fork(AppClock);
 	}
 
 	// One bundle, sent now rather than at the server's latency: an array
@@ -245,9 +313,70 @@ FxUnit {
 	// the server took it with everything else
 	prNodeGone { synth = nil }
 
+	// A node of its own outside a chain: the tree went (cmd-period, a
+	// reboot), so `synth` points at nothing and is made again. A chain
+	// does this for its own units, so joining one stops it.
+	// A group of someone else's as target may only be made again by a
+	// later tree function, which may itself wait a sync before making it:
+	// the node waits two, so that group's message has gone first. The
+	// default group is there before any tree function runs.
+	prWatchTree {
+		this.prUnwatchTree;
+		treeServer = server;
+		treeFunc = {
+			this.prNodeGone;
+			if (this.prTargetIsDefault) { this.prSyncNode } {
+				{ server.sync; server.sync; if (freed.not) { this.prSyncNode } }.fork(AppClock)
+			};
+		};
+		quitFunc = { this.prNodeGone };
+		ServerTree.add(treeFunc, treeServer);
+		ServerQuit.add(quitFunc, treeServer);
+	}
+
+	prTargetIsDefault {
+		var t = placement !? { placement[0] };
+		if (t.isNil or: { t.isKindOf(Server) }) { ^true };
+		t = t.asTarget;
+		^t.isKindOf(RootNode) or: { t.nodeID == server.defaultGroup.nodeID }
+	}
+
+	// from the server they were added for: target_ may have changed `server`
+	prUnwatchTree {
+		treeFunc !? { ServerTree.remove(treeFunc, treeServer) };
+		quitFunc !? { ServerQuit.remove(quitFunc, treeServer) };
+		treeFunc = nil;
+		quitFunc = nil;
+		treeServer = nil;
+	}
+
+	prForgetBusKey {
+		busKey !? { if (onBusUnits[busKey] === this) { onBusUnits.removeAt(busKey) } };
+		busKey = nil;
+	}
+
+	// the unit on that bus and place, of that class and control name, if there is one
+	*onBusUnit { |bus = 0, server, controlName, target, addAction = \addToTail|
+		var srv = server ?? { target.tryPerform(\server) } ?? { Server.default };
+		^onBusUnits[this.prBusKey(srv, FxUnit.prBusIndex(bus) ? 0,
+			(controlName ? this.controlName).asSymbol, target, addAction)]
+	}
+
+	// The target by node id, so a new object for the same group is the same
+	// place, and the default group the same as none
+	*prBusKey { |srv, busIndex, ctlName, tgt, addAction|
+		var id = tgt !? { tgt.tryPerform(\asTarget) !? { |n| n.tryPerform(\nodeID) } };
+		if (id.notNil and: { id == srv.defaultGroup.nodeID }) { id = nil };
+		^[srv, busIndex, this, ctlName, id, (addAction ? \addToTail).asSymbol]
+	}
+
 	// ------------------------------------------------------------- chains
 
 	prJoinChain { |aChain|
+		// a node of its own on a bus goes: the chain makes the next one
+		this.prUnwatchTree;
+		this.prForgetBusKey;
+		if (chain.isNil) { synth !? { this.prFreeNode } };
 		chain = aChain;
 		server = aChain.server;
 		bus = aChain.bus;
@@ -311,7 +440,7 @@ FxUnit {
 	asDict { ^(enabled: enabled, settings: this.settings) }
 
 	fromDict { |d|
-		if (d.isNil) { ^this };
+		if (d.isNil or: { this.prIsFreed }) { ^this };
 		d[\settings] !? { |v| this.settings_(v) };
 		d[\enabled] !? { |v| this.enabled_(v) };
 	}

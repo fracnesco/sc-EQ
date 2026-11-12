@@ -164,6 +164,12 @@ e.enabled = false;               // and faded out again - off costs nothing
 e = ParaEQ.onBus(0, 2, target: someGroup, addAction: \addToTail);
 ```
 
+Evaluating the same `onBus` line again replaces the eq it made before, as an
+Ndef does; it does not add a second one. To keep two on one bus, give the second
+a different `controlName:` or `target:`. A replaced or freed eq makes no node
+again. One that is on comes back after a cmd-period or a reboot until it is
+freed, so keep it in a variable (`e.free`).
+
 `enabled` means the same thing in every mode: with a node of its own the node
 exists exactly while the eq is on; driving a graph, the `On` control crossfades
 the filter out. That is the one thing this extension has to get right, and
