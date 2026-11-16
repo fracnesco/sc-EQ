@@ -76,7 +76,7 @@ FxDeviceCard {
 	classvar <>knobCount = 4;		// how many hero knobs a card shows at most
 
 	var <unit, <chain, <strip, <view;
-	var power, nameText, presetText, openBtn, moreBtn, thumb, controls;
+	var power, nameText, presetText, openBtn, moreBtn, dropBtn, thumb, controls;
 
 	asView { ^view }
 
@@ -103,6 +103,8 @@ FxDeviceCard {
 		presetText = StaticText().font_(FxPalette.smallFont).stringColor_(FxPalette.dim);
 		openBtn = FxButton("↗", { unit.gui }, 20);
 		moreBtn = FxButton("...", { this.prMenu }, 24);
+		// out of the chain in one click: the effect and its settings go
+		dropBtn = FxButton("x", { chain.remove(unit) }, 20);
 		thumb = UserView().fixedHeight_(46);
 		thumb.drawFunc = { |v| this.prDrawThumb(v) };
 		thumb.mouseDownAction = { |v, x, y, mod, button, count| if (count == 2) { unit.gui }; true };
@@ -116,7 +118,8 @@ FxDeviceCard {
 			Pen.fill;
 		};
 		view.layout = VLayout(
-			HLayout(power.view, nameText, [presetText, stretch: 1], openBtn.view, moreBtn.view).margins_(0).spacing_(4),
+			HLayout(power.view, nameText, [presetText, stretch: 1], openBtn.view, moreBtn.view, dropBtn.view)
+				.margins_(0).spacing_(4),
 			thumb,
 			HLayout(*(controls.collect { |c| c[\widget].view } ++ [nil])).margins_(0).spacing_(0),
 			nil
@@ -130,6 +133,7 @@ FxDeviceCard {
 		bar.attach(power.view, "% in or out of the chain - out, it costs nothing".format(name));
 		bar.attach(openBtn.view, "open %'s own window: everything it has".format(name));
 		bar.attach(moreBtn.view, "presets, move it earlier or later in the chain, take it out");
+		bar.attach(dropBtn.view, "take % out of the chain".format(name));
 		bar.attach(thumb, "what % is doing now - double click for its window".format(name));
 		controls.do { |c|
 			var k = c[\widget];
@@ -298,6 +302,37 @@ FxStrip {
 
 	refresh { if (view.notNil and: { view.isClosed.not }) { cards.do(_.refresh) } }
 
+	// The headings of the add menu, in its order - the ones SuperDirtGUI's
+	// insert menu has, so an effect is found in the same place everywhere.
+	*categories {
+		^[
+			\dynamics -> "dynamics", \filter -> "eq & filter", \distortion -> "distortion",
+			\delay -> "delay", \reverb -> "reverb", \modulation -> "modulation",
+			\pitch -> "pitch & frequency", \spectral -> "spectral", \granular -> "granular",
+			\resonator -> "resonator", \repeat -> "repeat & glitch", \utility -> "utility",
+			\other -> "other"
+		]
+	}
+
+	// An effect class's heading: what it says itself (*insertCategory), else
+	// the ones known here, a reverb's display, or \other.
+	*categoryOf { |cls|
+		var known = IdentityDictionary[
+			\ParaEQ -> \filter, \Compressor -> \dynamics, \Growl -> \distortion, \Tunnel -> \delay,
+			\Smear -> \spectral, \Cloud -> \granular, \Stammer -> \repeat, \Sympathy -> \resonator,
+			\Spiral -> \pitch
+		];
+		var display = cls.tryPerform(\displayClass), reverbView = \ReverbView.asClass;
+		// a reverb is known by its display: ReverbView, or one built on it
+		var isReverb = display.notNil and: { reverbView.notNil }
+			and: { (display === reverbView) or: { display.superclasses.includes(reverbView) } };
+		var cat = (if (cls.class.findRespondingMethodFor(\insertCategory).notNil) { cls.insertCategory })
+			?? { known[cls.name] }
+			?? { if (isReverb) { \reverb } }
+			? \other;
+		^if (this.categories.any { |a| a.key == cat }) { cat } { \other }
+	}
+
 	// the classes an effect can be made of, by what they are called
 	*effectClasses {
 		var list = [\ParaEQ, \Compressor].collect(_.asClass).reject(_.isNil);
@@ -336,15 +371,22 @@ FxStrip {
 		};
 	}
 
+	// the installed effects under their headings, a submenu each
 	prAddMenu {
-		var classes = this.class.effectClasses;
+		var classes = this.class.effectClasses, groups;
 		if (chain.isNil) { ^this };
-		Menu(*classes.collect { |cls|
-			MenuAction((cls.tryPerform(\title) ? cls.name).asString, {
-				var u = chain.add(cls.new);
-				u.enabled = true;
-			})
-		}).front;
+		groups = this.class.categories.collect { |cat|
+			var mine = classes.select { |cls| this.class.categoryOf(cls) == cat.key };
+			if (mine.notEmpty) {
+				Menu(*mine.collect { |cls|
+					MenuAction((cls.tryPerform(\title) ? cls.name).asString, {
+						var u = chain.add(cls.new);
+						u.enabled = true;
+					})
+				}).title_(cat.value)
+			}
+		}.reject(_.isNil);
+		Menu(*groups).front;
 	}
 
 	remove {
