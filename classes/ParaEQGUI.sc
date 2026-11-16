@@ -221,9 +221,12 @@ ParaEQPanel {
 	// how its corner rings - in silver, the colour of what an eq takes away.
 	prCutCard { |j|
 		var i = ParaEQ.numBands + j, col = FxPalette.cut, d = ParaEQ.defaultCuts[j], card;
-		cutIns[j] = FxSwitch(["in"], true).action_({ |s| eq !? { eq.cutOn_(i, s.value) } });
+		var mapName = #[\lowCut, \highCut][j];
+		cutIns[j] = FxSwitch(["in"], true).action_({ |s| eq !? { eq.cutOn_(i, s.value) } })
+			.mapUnitFunc_({ eq }).mapKey_((mapName ++ "On").asSymbol);
 		cutFreqs[j] = FxKnob("freq", ControlSpec(ParaEQ.minFreq, ParaEQ.maxFreq, \exp, 0, d[0], "Hz"),
-			\medium, false, col).action_({ |k| eq !? { eq.freqAt_(i, k.mapped) } });
+			\medium, false, col).action_({ |k| eq !? { eq.freqAt_(i, k.mapped) } })
+			.mapUnitFunc_({ eq }).mapKey_(mapName);
 		cutSlopes[j] = FxKnob("slope", ControlSpec(0, 1), \medium, false, col)
 			.stepNames_(ParaEQ.slopes.collect { |s| "% dB/oct".format(s) })
 			.default_(ParaEQ.slopes.indexOf(ParaEQ.defaultSlope))
@@ -263,9 +266,11 @@ ParaEQPanel {
 		var col = ParaEQ.handleColour(i), d = ParaEQ.defaultBands[i];
 		var size = if (compact) { \medium } { \big };
 		bandFreqs[i] = FxKnob("freq", ControlSpec(ParaEQ.minFreq, ParaEQ.maxFreq, \exp, 0, d[0], "Hz"),
-			size, false, col).action_({ |k| eq !? { eq.freqAt_(i, k.mapped) } });
+			size, false, col).action_({ |k| eq !? { eq.freqAt_(i, k.mapped) } })
+			.mapUnitFunc_({ eq }).mapKey_(("freq" ++ (i + 1)).asSymbol);
 		bandGains[i] = FxKnob("gain", ControlSpec(ParaEQ.dbRange.neg, ParaEQ.dbRange, \lin, 0, 0, "dB"),
-			size, true, col).dec_(1).action_({ |k| eq !? { eq.dbAt_(i, k.mapped) } });
+			size, true, col).dec_(1).action_({ |k| eq !? { eq.dbAt_(i, k.mapped) } })
+			.mapUnitFunc_({ eq }).mapKey_(("gain" ++ (i + 1)).asSymbol);
 		bandWidths[i] = if (ParaEQ.isShelf(i)) {
 			FxKnob("width", ControlSpec(ParaEQ.qLo(i), ParaEQ.qHi, \exp, 0, 1), \medium, false, col)
 				.box_(\pct)
