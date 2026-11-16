@@ -670,8 +670,14 @@ FxPower {
 FxButton {
 	var <view, <string, <>action, <enabled = true, down = false;
 	var <inactive = false, <muted = false;
+	var <>mapUnitFunc, <mapKey, <hasMap = false, <locked = false, <>lockColour;	// see FxMapHooks
 
 	asView { ^view }
+
+	mapUnit { ^mapUnitFunc.value }
+	mapKey_ { |key| mapKey = key; key !? { FxMapHooks.register(this) } }
+	hasMap_ { |bool| bool = bool == true; if (hasMap != bool) { hasMap = bool; this.refresh } }
+	locked_ { |bool| bool = bool == true; if (locked != bool) { locked = bool; this.refresh } }
 
 	*new { |string, action, width, parent| ^super.new.init(string, action, width, parent) }
 
@@ -680,7 +686,10 @@ FxButton {
 		action = argAction;
 		view = UserView(parent).fixedSize_(Size(width ?? { (string.bounds(FxPalette.font).width + 20).ceil }, 22));
 		view.drawFunc = { this.prDraw };
-		view.mouseDownAction = { if (enabled) { down = true; this.refresh }; true };
+		view.mouseDownAction = { |v, x, y, mod, button|
+			if (FxMapHooks.down(this, button).not and: { enabled }) { down = true; this.refresh };
+			true
+		};
 		view.mouseUpAction = { |v, x, y|
 			var was = down;
 			down = false;
@@ -704,6 +713,7 @@ FxButton {
 		Pen.addRoundedRect(r, 3, 3);
 		Pen.fill;
 		Pen.stringCenteredIn(string, r, FxPalette.font, FxPalette.fade(FxPalette.text, a));
+		FxMapHooks.drawDot(this, r.width - 7, 2);
 	}
 }
 

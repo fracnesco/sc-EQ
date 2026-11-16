@@ -266,7 +266,7 @@ FxStrip {
 		cards = [];
 		unitCtrls = [];
 		view = ScrollView().hasBorder_(false).fixedHeight_(height)
-			.hasVerticalScroller_(false).background_(FxPalette.waveBg);
+			.hasVerticalScroller_(false).autohidesScrollers_(true).background_(FxPalette.waveBg);
 		this.chain_(argChain);
 	}
 
