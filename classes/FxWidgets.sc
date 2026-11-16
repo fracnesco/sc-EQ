@@ -26,6 +26,72 @@
 // `muted` the whole panel of an effect that is off.
 // =====================================================================
 
+// What lets something outside - a controller mapper, a macro - work with every
+// widget without this file knowing it. A panel tells a widget which parameter
+// it is (mapUnitFunc: a function answering the unit, mapKey: one of the unit's
+// *mapParams keys); a widget then draws a dot while `hasMap`, stands still
+// while `locked` (drawn in lockColour: something else moves it), and asks here
+// on a click:
+//
+//   FxMapHooks.addProvider({ |widget| [MenuAction("learn midi", { ... })] });
+//   FxMapHooks.clickHook = { |widget| learning and: { arm(widget); true } };
+//
+// providers add items to the right-click menu; clickHook, answering true, takes
+// a left click before the widget does (learn mode). `widgets` is every one that
+// has a parameter and is still open, to repaint when the mappings change.
+FxMapHooks {
+	classvar <>clickHook, <providers, all;
+
+	*initClass { providers = List.new; all = [] }
+
+	*addProvider { |func| providers.add(func); ^func }
+	*removeProvider { |func| providers.remove(func) }
+
+	// an Array, kept by assignment: reject answers a new collection, and add
+	// on that one would not reach a List held here
+	*register { |widget| if (all.includes(widget).not) { all = all.add(widget) } }
+
+	// ask from the GUI thread: it reads whether each view is still open
+	*widgets {
+		all = all.reject { |w| w.view.isNil or: { w.view.isClosed } };
+		^all.copy
+	}
+
+	*items { |widget|
+		if (widget.mapKey.isNil) { ^[] };
+		^providers.collect { |f| f.value(widget) }.asArray.flatten.reject(_.isNil)
+	}
+
+	// a left click the hook wants: answers true, and the widget does nothing
+	*intercept { |widget, button|
+		^((button ? 0) == 0) and: { widget.mapKey.notNil } and: { clickHook.notNil }
+			and: { clickHook.value(widget) == true }
+	}
+
+	// for a widget with no menu of its own: the hook, then the providers' menu
+	// on a right click, then the lock. true: the click is spoken for
+	*down { |widget, button|
+		var items;
+		if (this.intercept(widget, button)) { ^true };
+		if ((button ? 0) == 1) {
+			items = this.items(widget);
+			if (items.notEmpty) { this.prFront(items); ^true };
+		};
+		^widget.locked
+	}
+
+	*prFront { |items| Menu(*items).front }
+
+	// the dot that says a controller is on it
+	*drawDot { |widget, x, y|
+		if (widget.hasMap) {
+			Pen.fillColor = FxPalette.sel;
+			Pen.fillOval(Rect(x, y, 5, 5));
+		};
+	}
+}
+
+
 FxKnob {
 	classvar <diameters;
 
@@ -35,8 +101,14 @@ FxKnob {
 	var <level, <>levelMirror = false;
 	var <stepNames;		// a knob over a list (a menu's items): it steps, shows ticks and the item
 	var dragging = false, startY = 0, startV = 0, lastShift = false, editor;
+	var <>mapUnitFunc, <mapKey, <hasMap = false, <locked = false, <>lockColour;	// see FxMapHooks
 
 	asView { ^view }
+
+	mapUnit { ^mapUnitFunc.value }
+	mapKey_ { |key| mapKey = key; key !? { FxMapHooks.register(this) } }
+	hasMap_ { |bool| bool = bool == true; if (hasMap != bool) { hasMap = bool; this.refresh } }
+	locked_ { |bool| bool = bool == true; if (locked != bool) { locked = bool; this.refresh } }
 
 	*initClass { diameters = (big: 56, medium: 40, small: 28) }
 
@@ -103,7 +175,7 @@ FxKnob {
 
 	// ------------------------------------------------------------- draw
 
-	prAlpha { ^case { inactive } { 0.35 } { muted } { 0.55 } { true } { 1 } }
+	prAlpha { ^case { inactive } { 0.35 } { muted or: { locked } } { 0.55 } { true } { 1 } }
 
 	prValueTop { ^16 + diameters[size] + 2 }
 
@@ -136,7 +208,7 @@ FxKnob {
 		from = if (bipolar) { 1.5pi } { start };
 		to = ang;
 		if ((to - from).abs > 0.001) {
-			Pen.fillColor = FxPalette.fade(colour, a);
+			Pen.fillColor = FxPalette.fade(if (locked) { lockColour ? colour } { colour }, a);
 			Pen.addAnnularWedge(c, r - thick, r, min(from, to), (to - from).abs);
 			Pen.fill;
 		};
@@ -171,13 +243,16 @@ FxKnob {
 			Pen.stringCenteredIn(this.text, Rect(0, this.prValueTop, w, 15), FxPalette.font,
 				FxPalette.fade(valueColour, a));
 		};
+		FxMapHooks.drawDot(this, c.x + r - 2, 16);
 	}
 
 	// ------------------------------------------------------------ mouse
 
 	prDown { |x, y, mod, button, count|
+		if (FxMapHooks.intercept(this, button)) { ^true };
 		case
 		{ (button ? 0) == 1 } { this.prMenu }
+		{ locked } { nil }
 		{ count == 2 } { this.valueAction = spec.unmap(default); this.prSayHint }
 		{ y >= this.prValueTop } { this.prEdit }
 		{ true } {
@@ -192,7 +267,7 @@ FxKnob {
 
 	prMove { |y, mod|
 		var fine = mod.isShift;
-		if (dragging.not) { ^true };
+		if (dragging.not or: { locked }) { ^true };
 		// a change of speed mid drag carries on from where it is, no jump
 		if (fine != lastShift) { startY = y; startV = value; lastShift = fine };
 		this.valueAction = startV + ((startY - y) / 200 * if (fine) { 0.1 } { 1 });
@@ -203,7 +278,7 @@ FxKnob {
 	prUp { dragging = false; this.refresh; ^true }
 
 	prWheel { |mod, yd|
-		if (yd != 0) {
+		if (yd != 0 and: { locked.not }) {
 			this.valueAction = value + (yd.sign * case
 				{ stepNames.notNil } { 1 / (stepNames.size - 1).max(1) }
 				{ mod.isShift } { 0.002 }
@@ -216,17 +291,23 @@ FxKnob {
 	prSayHint { hints !? { |h| h.string = "%  %   -   %".format(label, this.text, hint) } }
 
 	prMenu {
-		var actions = [
+		var actions = if (locked) { [] } { [
 			MenuAction("back to " ++ FxPalette.format(default, spec.units, box, dec, bipolar, floorText, spec), {
 				this.valueAction = spec.unmap(default)
 			}),
 			MenuAction("type a value...", { this.prEdit })
-		];
+		] }, more = FxMapHooks.items(this);
 		// more values worth one click: [[label, value], ...] in the parameter's own unit
-		menuItems.do { |pair|
-			actions = actions.add(MenuAction(pair[0].asString, { this.valueAction = spec.unmap(pair[1]) }));
+		if (locked.not) {
+			menuItems.do { |pair|
+				actions = actions.add(MenuAction(pair[0].asString, { this.valueAction = spec.unmap(pair[1]) }));
+			};
 		};
-		Menu(*actions).front;
+		if (more.notEmpty) {
+			if (actions.notEmpty) { actions = actions.add(MenuAction.separator) };
+			actions = actions ++ more;
+		};
+		if (actions.notEmpty) { Menu(*actions).front };
 	}
 
 	// a field over the value: Return takes it, Escape or clicking away leaves it
@@ -265,8 +346,14 @@ FxChoice {
 	var <view, <items, <value = 0, <>action, <label, <width;
 	var <inactive = false, <muted = false, <tidal = false, <>override;
 	var <>hint = "", <>hints;
+	var <>mapUnitFunc, <mapKey, <hasMap = false, <locked = false, <>lockColour;	// see FxMapHooks
 
 	asView { ^view }
+
+	mapUnit { ^mapUnitFunc.value }
+	mapKey_ { |key| mapKey = key; key !? { FxMapHooks.register(this) } }
+	hasMap_ { |bool| bool = bool == true; if (hasMap != bool) { hasMap = bool; this.refresh } }
+	locked_ { |bool| bool = bool == true; if (locked != bool) { locked = bool; this.refresh } }
 
 	*new { |label, items, width, parent| ^super.new.init(label, items, width, parent) }
 
@@ -282,9 +369,14 @@ FxChoice {
 		width = argWidth ?? { this.class.widthFor(items) };
 		view = UserView(parent).fixedSize_(Size(width, this.prBoxTop + 22));
 		view.drawFunc = { this.prDraw };
-		view.mouseDownAction = { |v, x, y, mod, button| this.prDown(y); true };
+		view.mouseDownAction = { |v, x, y, mod, button|
+			if (FxMapHooks.down(this, button).not) { this.prDown(y) };
+			true
+		};
 		view.mouseWheelAction = { |v, x, y, mod, xd, yd|
-			if (yd != 0 and: { items.notEmpty }) { this.valueAction = (value - yd.sign).clip(0, items.size - 1) };
+			if (yd != 0 and: { items.notEmpty } and: { locked.not }) {
+				this.valueAction = (value - yd.sign).clip(0, items.size - 1)
+			};
 			true
 		};
 		^this
@@ -322,6 +414,7 @@ FxChoice {
 		Pen.lineTo(cx @ (cy + 3));
 		Pen.lineTo((cx - 4) @ (cy - 2));
 		Pen.fill;
+		FxMapHooks.drawDot(this, w - 7, top + 2);
 	}
 
 	prDown { |y|
@@ -340,8 +433,14 @@ FxSwitch {
 	var <view, <items, <value, <>action, <toggle, <>colour, <muted = false, <inactive = false;
 	var <label, <tidal = false, <inactiveItems, <itemColours, <hot, <marks;
 	var widths, top = 0;
+	var <>mapUnitFunc, <mapKey, <hasMap = false, <locked = false, <>lockColour;	// see FxMapHooks
 
 	asView { ^view }
+
+	mapUnit { ^mapUnitFunc.value }
+	mapKey_ { |key| mapKey = key; key !? { FxMapHooks.register(this) } }
+	hasMap_ { |bool| bool = bool == true; if (hasMap != bool) { hasMap = bool; this.refresh } }
+	locked_ { |bool| bool = bool == true; if (locked != bool) { locked = bool; this.refresh } }
 
 	*new { |items, toggle = false, parent, label| ^super.new.init(items, toggle, parent, label) }
 
@@ -360,7 +459,10 @@ FxSwitch {
 		label !? { w = max(w, (label.asString.bounds(FxPalette.font).width + 8).ceil) };
 		view = UserView(parent).fixedSize_(Size(w, top + 20));
 		view.drawFunc = { this.prDraw };
-		view.mouseDownAction = { |v, x| this.prDown(x); true };
+		view.mouseDownAction = { |v, x, y, mod, button|
+			if (FxMapHooks.down(this, button).not) { this.prDown(x) };
+			true
+		};
 		^this
 	}
 
@@ -422,6 +524,7 @@ FxSwitch {
 			Pen.line(x @ (top + 3), x @ (top + 17));
 		};
 		Pen.stroke;
+		FxMapHooks.drawDot(this, widths.sum - 6, top + 1);
 	}
 
 	prDown { |x|
@@ -442,8 +545,14 @@ FxPad {
 	var <view, <label, <value = false, <>action, <mode, <>colour, <>outline, <caption;
 	var <inactive = false, <muted = false, <tidal = false, <>hint = "", <>hints;
 	var down = false, downAt = 0, flipped = false;
+	var <>mapUnitFunc, <mapKey, <hasMap = false, <locked = false, <>lockColour;	// see FxMapHooks
 
 	asView { ^view }
+
+	mapUnit { ^mapUnitFunc.value }
+	mapKey_ { |key| mapKey = key; key !? { FxMapHooks.register(this) } }
+	hasMap_ { |bool| bool = bool == true; if (hasMap != bool) { hasMap = bool; this.refresh } }
+	locked_ { |bool| bool = bool == true; if (locked != bool) { locked = bool; this.refresh } }
 
 	*new { |label, mode = \latch, width = 68, height = 90, parent, caption|
 		^super.new.init(label, mode, width, height, parent, caption)
@@ -456,7 +565,10 @@ FxPad {
 		colour = FxPalette.accent;
 		view = UserView(parent).fixedSize_(Size(width ? 68, height ? 90));
 		view.drawFunc = { this.prDraw };
-		view.mouseDownAction = { |v, x, y, mod, button| this.prDown(button); true };
+		view.mouseDownAction = { |v, x, y, mod, button|
+			if (FxMapHooks.down(this, button).not) { this.prDown(button) };
+			true
+		};
 		view.mouseUpAction = { this.prUp; true };
 		^this
 	}
@@ -493,6 +605,7 @@ FxPad {
 		};
 		Pen.stringCenteredIn(label, r, FxPalette.boldFont,
 			FxPalette.fade(if (lit) { FxPalette.bg } { FxPalette.text }, a));
+		FxMapHooks.drawDot(this, w - 12, 20);
 	}
 
 	prDown { |button|
