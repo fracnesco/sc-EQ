@@ -41,6 +41,7 @@
 FxUnit {
 	classvar defs, sent, quitHooks;
 	classvar onBusUnits;			// [server, bus, class, controlName, target id, addAction] -> the unit there
+	classvar mapTables;				// class -> its *mapParams, made once
 
 	var <enabled = false;
 	var <target;				// the node it drives, in driver mode - nil otherwise
@@ -65,6 +66,7 @@ FxUnit {
 		sent = IdentityDictionary.new;
 		quitHooks = IdentityDictionary.new;
 		onBusUnits = Dictionary.new;
+		mapTables = IdentityDictionary.new;
 	}
 
 	// --------------------------------------------------------- what to build
@@ -86,6 +88,41 @@ FxUnit {
 	controls { ^this.subclassResponsibility(thisMethod) }
 	settings { ^this.subclassResponsibility(thisMethod) }
 	settings_ { |data| ^this.subclassResponsibility(thisMethod) }
+
+	// ------------------------------------------------ parameters, as a list
+
+	// Every parameter something outside may move - a controller, a macro, the
+	// knobs of a small card - the same way for every effect, so that none of
+	// those has to know which effect it is talking to. One Event each:
+	//
+	//   (key:, label:, kind: \knob | \toggle | \menu, spec:, items:, section:,
+	//    box:, hero:)
+	//
+	// spec is always there and always numbers: a toggle's is 0 or 1, a menu's
+	// the index of its item. hero marks the few that say what the effect is
+	// doing, the ones a card with room for three knobs would show. Made once
+	// per class; a subclass answers *prMapParams.
+	*mapParams {
+		^mapTables[this] ?? {
+			var list = this.prMapParams;
+			mapTables[this] = list;		// put answers the dictionary, not the list
+			list
+		}
+	}
+	*prMapParams { ^[] }
+	*mapParam { |key| ^this.mapParams.detect { |e| e[\key] == key.asSymbol } }
+	*mapKeys { ^this.mapParams.collect { |e| e[\key] } }
+
+	// one of them, as a number in its spec; nil for a key it does not have
+	mapGet { |key| ^nil }
+	mapSet { |key, value| }
+
+	// How late what comes out is, in seconds, against what went in: the delay
+	// the effect cannot avoid (a lookahead, an fft window), never the delay it
+	// is there to make (an echo, a pre-delay). 0 for most. Something that
+	// runs effects side by side lines them up by this, and hears about a
+	// change as changed(\latency).
+	latency { ^0 }
 
 	// ---------------------------------------------------------------- new
 
