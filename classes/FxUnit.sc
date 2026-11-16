@@ -248,7 +248,7 @@ FxUnit {
 
 	prEnabledChanged {
 		case
-		{ chain.notNil } { chain.prSyncUnit(this) }
+		{ chain.notNil } { chain.prSyncUnit(this); chain.prUnitSwitched(this) }
 		{ placement.notNil } { this.prSyncNode }
 		{ true } { this.prPushOn };
 	}
@@ -420,6 +420,13 @@ FxUnit {
 		numChannels = aChain.numChannels;
 		placement = nil;
 		target = nil;
+	}
+
+	// the chain it is in moved to another bus or server
+	prChainMoved { |aChain|
+		server = aChain.server;
+		bus = aChain.bus;
+		numChannels = aChain.numChannels;
 	}
 
 	prLeaveChain {

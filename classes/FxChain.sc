@@ -42,6 +42,9 @@ FxChain {
 	var placementFunc;			// { [target, addAction] } for the group, at tree time
 	var bootFunc, treeFunc, quitFunc, building = false;
 	var <presetFile, <guiObj;
+	var ids, usedIds;			// effect -> its id in this chain, and every id given so far
+	var <owned = false;			// someone else places and rebuilds it - see *owned
+	var <>onChange;				// { |chain| } - which effects are in, and on, changed
 
 	*initClass { all = IdentityDictionary.new }
 
@@ -52,6 +55,17 @@ FxChain {
 	// default, which is where a chain on an output bus belongs.
 	*new { |name, bus = 0, numChannels = 2, server, target, addAction|
 		^super.new.init(name, bus, numChannels, server, target, addAction)
+	}
+
+	// A chain that belongs to something else - a pad of a sampler, a module's
+	// master, a branch of a rack. It keeps no place in the registry and no
+	// hooks of its own: its owner says where its group goes, and when, with
+	// `rebuild`, and hears through `onChange` when an effect is added, taken
+	// out or switched, so it can route into the chain only while there is
+	// something in it. Each effect in it has an id (see idOf) that a preset
+	// keeps, so something can name an effect and still mean it after a reload.
+	*owned { |name, numChannels = 2, server|
+		^super.new.initOwned(name, numChannels, server)
 	}
 
 	*at { |name| ^all[name.asSymbol] }
@@ -99,8 +113,90 @@ FxChain {
 		^this
 	}
 
+	initOwned { |argName, argChannels, argServer|
+		name = argName.asSymbol;
+		server = argServer ? Server.default;
+		bus = 0;
+		numChannels = (argChannels ? 2).asInteger.clip(1, 64);
+		units = [];
+		owned = true;
+		ids = IdentityDictionary.new;
+		^this
+	}
+
+	// The owner's three messages. rebuild: the tree is there (again) - a new
+	// group at `target`, on `bus` if one is given, and every effect that is on
+	// gets its node. nodesGone: the server took them. freeNodes: take them
+	// down, the chain is not wanted for now.
+	rebuild { |target, addAction = \addToHead, argBus|
+		argBus !? { this.bus_(argBus) };
+		if (server.serverRunning.not or: { target.isNil }) { ^this };
+		units.do(_.prNodeGone);
+		group !? { |g| g.free };
+		group = Group(target, addAction);
+		units.do { |u| this.prSyncUnit(u) };
+		this.changed(\nodes);
+	}
+
+	nodesGone { this.prNodesGone }
+
+	freeNodes {
+		units.do(_.prFreeNode);
+		group !? { |g| if (server.serverRunning) { g.free } };
+		group = nil;
+		this.changed(\nodes);
+	}
+
+	// the bus it works on; the effects follow
+	bus_ { |argBus|
+		bus = FxUnit.prBusIndex(argBus) ? bus;
+		units.do { |u| u.prChainMoved(this) };
+	}
+
+	server_ { |srv| server = srv; units.do { |u| u.prChainMoved(this) } }
+
+	// whether anything in it would do something now
+	hasActiveUnits { ^enabled and: { units.any { |u| u.enabled } } }
+
+	// an effect of this chain was switched on or off
+	prUnitSwitched { |unit| onChange.value(this) }
+
+	// ------------------------------------------------------------------ ids
+
+	// What an effect is called in this chain: its kind and a number, \eq1,
+	// \growl2. Given when it joins, kept in the chain's dict, never reused
+	// while the chain lives.
+	idOf { |unit| ^ids !? { ids[unit] } }
+
+	unitAt { |id| ^ids !? { ids.findKeyForValue(id.asSymbol) } }
+
+	prGiveId { |unit, wanted|
+		var base, n = 1, id;
+		ids = ids ?? { IdentityDictionary.new };
+		usedIds = usedIds ? [];
+		if (ids[unit].notNil) { ^ids[unit] };
+		// an id a preset names is taken as it is, unless an effect here has it
+		if (wanted.notNil and: { ids.includes(wanted.asSymbol).not }) {
+			id = wanted.asSymbol;
+		} {
+			base = (unit.class.tryPerform(\title) ? unit.class.name).asString.toLower.select(_.isAlphaNum);
+			while { id = (base ++ n).asSymbol; usedIds.includes(id) } { n = n + 1 };
+		};
+		if (usedIds.includes(id).not) { usedIds = usedIds.add(id) };
+		ids[unit] = id;
+		^id
+	}
+
 	free {
 		guiObj !? (_.close);
+		if (owned) {
+			units.copy.do { |u| u.prLeaveChain };
+			units = [];
+			group !? { |g| if (server.serverRunning) { g.free } };
+			group = nil;
+			this.changed(\freed);
+			^this
+		};
 		ServerBoot.remove(bootFunc, server);
 		ServerTree.remove(treeFunc, server);
 		ServerQuit.remove(quitFunc, server);
@@ -122,9 +218,11 @@ FxChain {
 		if (units.includes(unit)) { ^this };
 		unit.chain !? (_.remove(unit));
 		unit.prJoinChain(this);
+		this.prGiveId(unit);
 		units = if (index.isNil) { units ++ [unit] } { units.insert(index, unit) };
 		this.prSyncUnit(unit);
 		this.changed(\units);
+		onChange.value(this);
 		^unit
 	}
 
@@ -133,6 +231,7 @@ FxChain {
 		units = units.copy;
 		units.remove(unit);
 		unit.prLeaveChain;
+		ids !? { ids.removeAt(unit) };
 		this.changed(\units);
 		^unit
 	}
@@ -158,6 +257,7 @@ FxChain {
 		units = units.insert(to, unit);
 		this.prOrderNodes;
 		this.changed(\units);
+		onChange.value(this);
 	}
 
 	// Whether the chain as a whole is in: off, every effect's node is faded
@@ -168,6 +268,7 @@ FxChain {
 		enabled = bool;
 		units.do { |u| this.prSyncUnit(u) };
 		this.changed(\enabled);
+		onChange.value(this);
 	}
 
 	// ------------------------------------------------------------ the nodes
@@ -282,8 +383,40 @@ FxChain {
 	asDict {
 		^(
 			name: name, enabled: enabled,
-			units: units.collect { |u| (class: u.class.name, state: u.asDict) }
+			units: units.collect { |u| (class: u.class.name, id: this.idOf(u), state: u.asDict) }
 		)
+	}
+
+	// The chain made to be exactly these entries, in this order: an effect
+	// with an entry's id and class is kept and given its state, anything else
+	// is made, and what has no entry goes. What an owned chain's owner loads.
+	setUnits { |entries|
+		var wanted = List.new, old = units.copy;
+		entries.asArray.do { |entry|
+			var cls = entry[\class].asSymbol.asClass, unit;
+			if (cls.isNil) {
+				("FxChain: % is not installed - skipping that effect".format(entry[\class])).warn;
+			} {
+				unit = entry[\id] !? { |id| this.unitAt(id) };
+				if (unit.isNil or: { unit.class != cls } or: { wanted.includes(unit) }) {
+					// another kind of effect under that id: it goes, the id is free
+					if (unit.notNil and: { wanted.includes(unit).not }) {
+						unit.prLeaveChain; ids.removeAt(unit); old.remove(unit);
+					};
+					unit = cls.new;
+					unit.prJoinChain(this);
+					this.prGiveId(unit, entry[\id]);
+				};
+				wanted.add(unit);
+				unit.fromDict(entry[\state]);
+			};
+		};
+		old.do { |u| if (wanted.includes(u).not) { u.prLeaveChain; ids.removeAt(u) } };
+		units = wanted.asArray;
+		units.do { |u| this.prSyncUnit(u) };
+		this.prOrderNodes;
+		this.changed(\units);
+		onChange.value(this);
 	}
 
 	// Effect by effect, in order: an entry lands on the effect of the same
