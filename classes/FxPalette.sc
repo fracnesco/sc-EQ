@@ -63,6 +63,7 @@ FxPalette {
 			resonator: Color(0.62, 0.62, 0.98),	// lilac-indigo: ringing strings
 			pitch:     Color(0.76, 0.90, 0.36),	// lime: a shifted partial
 			stereo:    Color(0.98, 0.78, 0.58),	// apricot: the image, the side an imager adds
+			modulation: Color(0.96, 0.58, 0.86),	// orchid-rose: voices that waver (chorus, flanger)
 			dynamics:  gain,
 			eq:        ivory
 		);
