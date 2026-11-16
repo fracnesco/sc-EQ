@@ -429,6 +429,63 @@ ParaEQ : FxUnit {
 
 	toggleCut { |i| this.cutOn_(i, this.cutOn(i).not) }
 
+	// FxUnit's *mapParams: freq, gain and q of each band - freq1 .. q5, low
+	// to high - then each cut's corner and its switch.
+	*prMapParams {
+		var list = List.new, freq = ControlSpec(minFreq, maxFreq, \exp, 0, 1000, "Hz");
+		this.numBands.do { |i|
+			var n = i + 1, section = ("band " ++ n).asSymbol;
+			list.add((key: ("freq" ++ n).asSymbol, label: "freq " ++ n, kind: \knob, spec: freq,
+				section: section, hero: false));
+			list.add((key: ("gain" ++ n).asSymbol, label: "gain " ++ n, kind: \knob,
+				spec: ControlSpec(dbRange.neg, dbRange, \lin, 0, 0, "dB"), section: section, hero: i == 2));
+			list.add((key: ("q" ++ n).asSymbol, label: "q " ++ n, kind: \knob,
+				spec: ControlSpec(this.qLo(i), this.qHi, \exp, 0, 1), section: section, hero: false));
+		};
+		[[\lowCut, "low cut", this.highPass], [\highCut, "high cut", this.lowPass]].do { |c|
+			list.add((key: c[0], label: c[1], kind: \knob, spec: freq, section: c[0], hero: true));
+			list.add((key: (c[0] ++ "On").asSymbol, label: c[1] ++ " in", kind: \toggle,
+				spec: ControlSpec(0, 1, \lin, 1, 0), section: c[0], hero: false));
+		};
+		^list.asArray
+	}
+
+	// a map key as [part, handle]: \gain3 -> [\gain, 2], \lowCutOn -> [\on, this.highPass]
+	*prMapKey { |key|
+		var str = key.asString, n;
+		^case
+		{ str == "lowCut" } { [\freq, this.highPass] }
+		{ str == "lowCutOn" } { [\on, this.highPass] }
+		{ str == "highCut" } { [\freq, this.lowPass] }
+		{ str == "highCutOn" } { [\on, this.lowPass] }
+		{ str.last.isDecDigit and: { (n = str.last.digit - 1) < this.numBands } and: { n >= 0 } } {
+			switch (str.drop(-1), "freq", { [\freq, n] }, "gain", { [\gain, n] }, "q", { [\q, n] }, { nil })
+		}
+		{ nil }
+	}
+
+	mapGet { |key|
+		var k = ParaEQ.prMapKey(key);
+		if (k.isNil) { ^nil };
+		^switch (k[0],
+			\freq, { this.freqAt(k[1]) },
+			\gain, { this.dbAt(k[1]) },
+			\q, { this.qAt(k[1]) },
+			\on, { this.cutOn(k[1]).binaryValue }
+		)
+	}
+
+	mapSet { |key, value|
+		var k = ParaEQ.prMapKey(key);
+		if (k.isNil) { ^this };
+		switch (k[0],
+			\freq, { this.freqAt_(k[1], value) },
+			\gain, { this.dbAt_(k[1], value) },
+			\q, { this.qAt_(k[1], value) },
+			\on, { this.cutOn_(k[1], value > 0.5) }
+		);
+	}
+
 	// the same two, under their own names
 	highPassOn { ^this.cutOn(ParaEQ.highPass) }
 	highPassOn_ { |bool| this.cutOn_(ParaEQ.highPass, bool) }
