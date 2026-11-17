@@ -155,6 +155,76 @@ FxPalette {
 	// a parameter's value as it is read under its knob, with its unit:
 	// "375 ms", "1.80 kHz", "-6.0 dB", "35 %". box is the table's (\pct, \ms);
 	// floorText is what the bottom of the range says when it means off
+	// ------------------------------------------------------- intervals
+	//
+	// A parameter's interval is the amount someone usually moves it by: a dB
+	// for a level, a semitone for a frequency, a hundredth for a mix. An arrow
+	// key on a selected knob moves it by one (shift: a tenth). It is a number
+	// in the parameter's own unit, or a way of stepping whose size depends on
+	// where the value is:
+	//
+	//   \db         a dB, for a gain kept as an amplitude (below -60 dB: off)
+	//   \semitone   a twelfth of an octave: small steps low, large ones high
+	//   \ratio      about a twentieth of the value, on round numbers
+	//               (0.05 up to 2, 0.1 up to 5, 0.25 up to 10, and so on)
+	//   a Function  { |value, dir, fine| the new value }
+	//
+	// *intervalFor is what a parameter gets when its table says nothing.
+	*intervalFor { |spec, box|
+		var units = (spec.units ? "").asString, range = (spec.maxval - spec.minval).abs;
+		^case
+		{ spec.step > 0 } { spec.step }
+		{ units == "dB" or: { box == \db } } { 1 }
+		{ units == "Hz" } { \semitone }
+		{ units == "st" } { 1 }
+		{ box == \pct } { range / 100 }
+		{ units == "%" } { 1 }
+		{ spec.warp.isKindOf(LinearWarp).not } { \ratio }
+		{ true } { this.nice(range / 100) }
+	}
+
+	// the nearest of 1, 2, 5 times a power of ten
+	*nice { |x|
+		var e, f;
+		if (x <= 0) { ^0 };
+		e = 10 ** x.log10.floor;
+		f = x / e;
+		^e * case { f < 1.5 } { 1 } { f < 3.5 } { 2 } { f < 7.5 } { 5 } { true } { 10 }
+	}
+
+	// `value` one interval up (dir 1) or down (-1), inside the spec. A number
+	// interval lands on its own grid: 1 dB steps from -6.3 go to -5, -4...
+	*nudge { |value, dir, spec, interval, box, fine = false|
+		var f = if (fine) { 0.1 } { 1 }, range = (spec.maxval - spec.minval).abs;
+		var new, step, m, e, r, db;
+		interval = interval ?? { this.intervalFor(spec, box) };
+		if (interval.isKindOf(Function)) { ^spec.constrain(interval.value(value, dir, fine)) };
+		new = switch (interval,
+			\db, {
+				db = value.max(1e-9).ampdb;
+				if (db < -60) { if (dir > 0) { -60.dbamp } { 0 } } {
+					db = (db + (dir * f)).round(f);
+					if (db < -60) { 0 } { db.dbamp }
+				}
+			},
+			\semitone, { value * (2 ** (dir * f / 12)) },
+			\ratio, {
+				m = max(value.abs, range * 0.001);
+				if (dir < 0) { m = m * 0.999 };		// down from 2 is the step below 2
+				e = 10 ** m.log10.floor;
+				r = m / e;
+				step = e * (case { r < 2 } { 0.05 } { r < 5 } { 0.1 } { true } { 0.25 }) * f;
+				(value + (dir * step)).round(step)
+			},
+			{
+				step = interval * f;
+				if (spec.step > 0) { step = step.max(spec.step) };
+				(value + (dir * step)).round(step)
+			}
+		);
+		^spec.constrain(new)
+	}
+
 	*format { |v, units, box, dec, bipolar = false, floorText, spec|
 		var u = units ? "", sign;
 		if (v.isNil) { ^"" };
