@@ -45,6 +45,7 @@ FxChain {
 	var ids, usedIds;			// effect -> its id in this chain, and every id given so far
 	var <owned = false;			// someone else places and rebuilds it - see *owned
 	var <>onChange;				// { |chain| } - which effects are in, and on, changed
+	var <>owner;				// what an owned chain belongs to, when it says: a rack
 
 	*initClass { all = IdentityDictionary.new }
 
@@ -155,6 +156,25 @@ FxChain {
 
 	server_ { |srv| server = srv; units.do { |u| u.prChainMoved(this) } }
 
+	// an owned chain is as wide as its owner says; the effects follow at their next node
+	numChannels_ { |n|
+		n = (n ? 2).asInteger.clip(1, 64);
+		if (n == numChannels) { ^this };
+		numChannels = n;
+		units.do { |u| u.prFreeNode; u.prChainMoved(this) };
+		units.do { |u| this.prSyncUnit(u) };
+	}
+
+	// an effect may refuse a chain (a rack too deep in racks): it is not added
+	prMayAdd { |unit|
+		if (unit.tryPerform(\prMayJoin, this) == false) {
+			("FxChain %: % cannot go in here - a rack holds racks one level deep, no more."
+				.format(name, unit.class.name)).warn;
+			^false
+		};
+		^true
+	}
+
 	// whether anything in it would do something now
 	hasActiveUnits { ^enabled and: { units.any { |u| u.enabled } } }
 
@@ -216,6 +236,7 @@ FxChain {
 	add { |unit, index|
 		if (unit.isNil) { ^this };
 		if (units.includes(unit)) { ^this };
+		if (this.prMayAdd(unit).not) { ^nil };
 		unit.chain !? (_.remove(unit));
 		unit.prJoinChain(this);
 		this.prGiveId(unit);
@@ -404,11 +425,15 @@ FxChain {
 						unit.prLeaveChain; ids.removeAt(unit); old.remove(unit);
 					};
 					unit = cls.new;
-					unit.prJoinChain(this);
-					this.prGiveId(unit, entry[\id]);
+					if (this.prMayAdd(unit)) {
+						unit.prJoinChain(this);
+						this.prGiveId(unit, entry[\id]);
+					} { unit = nil };
 				};
-				wanted.add(unit);
-				unit.fromDict(entry[\state]);
+				unit !? {
+					wanted.add(unit);
+					unit.fromDict(entry[\state]);
+				};
 			};
 		};
 		old.do { |u| if (wanted.includes(u).not) { u.prLeaveChain; ids.removeAt(u) } };
