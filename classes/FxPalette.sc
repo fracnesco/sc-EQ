@@ -152,9 +152,6 @@ FxPalette {
 		{ true } { this.fixed(x, 2) }
 	}
 
-	// a parameter's value as it is read under its knob, with its unit:
-	// "375 ms", "1.80 kHz", "-6.0 dB", "35 %". box is the table's (\pct, \ms);
-	// floorText is what the bottom of the range says when it means off
 	// ------------------------------------------------------- intervals
 	//
 	// A parameter's interval is the amount someone usually moves it by: a dB
@@ -173,14 +170,28 @@ FxPalette {
 	*intervalFor { |spec, box|
 		var units = (spec.units ? "").asString, range = (spec.maxval - spec.minval).abs;
 		^case
-		{ spec.step > 0 } { spec.step }
-		{ units == "dB" or: { box == \db } } { 1 }
-		{ units == "Hz" } { \semitone }
-		{ units == "st" } { 1 }
-		{ box == \pct } { range / 100 }
+		// a grid of its own, when it is a coarse one (counts, steps): a fine grid
+		// (a dB kept to tenths) only rounds what the interval gives
+		{ spec.step > 0 and: { spec.step >= (range / 100) } } { spec.step }
+		{ units.beginsWith("dB") or: { units == "LUFS" } or: { box == \db } } { 1 }
+		{ spec.warp.isKindOf(DbFaderWarp) } { 1 }
+		{ spec.warp.isKindOf(FaderWarp) } { \db }
+		// an audible frequency; a slow one (an lfo's rate) steps like a time
+		{ units == "Hz" and: { spec.warp.isKindOf(ExponentialWarp) } and: { spec.maxval > 100 } } { \semitone }
+		{ #["st", "midi", "bpm", "ct"].includesEqual(units) or: { box == \note } } { 1 }
+		{ box == \pct } { min(0.01, this.nice(range / 100)) }
 		{ units == "%" } { 1 }
 		{ spec.warp.isKindOf(LinearWarp).not } { \ratio }
 		{ true } { this.nice(range / 100) }
+	}
+
+	// a step is never smaller than what the value text can show: a time reads
+	// in tenths of a millisecond under 10 ms, milliseconds under a second,
+	// hundredths of a second above
+	*prSeen { |step, value, spec, box|
+		var v = value.abs;
+		if (box != \ms and: { (spec.units ? "").asString != "s" }) { ^step };
+		^step.max(case { v < 0.01 } { 0.0001 } { v < 1 } { 0.001 } { true } { 0.01 })
 	}
 
 	// the nearest of 1, 2, 5 times a power of ten
@@ -213,11 +224,14 @@ FxPalette {
 				if (dir < 0) { m = m * 0.999 };		// down from 2 is the step below 2
 				e = 10 ** m.log10.floor;
 				r = m / e;
-				step = e * (case { r < 2 } { 0.05 } { r < 5 } { 0.1 } { true } { 0.25 }) * f;
+				step = e * (case { r < 2 } { 0.05 } { r < 5 } { 0.1 } { true } { 0.25 });
+				// a range that starts at nothing: off the bottom in steps worth making
+				if (spec.minval <= 0 and: { spec.maxval > 0 }) { step = step.max(this.nice(range / 1000)) };
+				step = this.prSeen(step, value, spec, box) * f;
 				(value + (dir * step)).round(step)
 			},
 			{
-				step = interval * f;
+				step = this.prSeen(interval, value, spec, box) * f;
 				if (spec.step > 0) { step = step.max(spec.step) };
 				(value + (dir * step)).round(step)
 			}
@@ -225,6 +239,9 @@ FxPalette {
 		^spec.constrain(new)
 	}
 
+	// a parameter's value as it is read under its knob, with its unit:
+	// "375 ms", "1.80 kHz", "-6.0 dB", "35 %". box is the table's (\pct, \ms);
+	// floorText is what the bottom of the range says when it means off
 	*format { |v, units, box, dec, bipolar = false, floorText, spec|
 		var u = units ? "", sign;
 		if (v.isNil) { ^"" };
