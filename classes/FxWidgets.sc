@@ -101,7 +101,7 @@ FxKnob {
 	var <level, <>levelMirror = false;
 	var <stepNames;		// a knob over a list (a menu's items): it steps, shows ticks and the item
 	var <>interval;		// what an arrow key moves it by - see FxPalette.nudge; nil: worked out from the spec
-	var <keys = false;	// whether it can be selected and moved with the arrow keys
+	var <keys = false;	// whether it can be selected and moved with the arrow keys: it can, unless told not
 	var <selected = false;	// it has the keyboard: the arrow keys move this one
 	var dragging = false, startY = 0, startV = 0, lastShift = false, editor;
 	var <>mapUnitFunc, <mapKey, <hasMap = false, <locked = false, <>lockColour;	// see FxMapHooks
@@ -135,6 +135,7 @@ FxKnob {
 		view.mouseMoveAction = { |v, x, y, mod| this.prMove(y, mod) };
 		view.mouseUpAction = { this.prUp };
 		view.mouseWheelAction = { |v, x, y, mod, xd, yd| this.prWheel(mod, yd) };
+		this.keys_(true);
 		^this
 	}
 
