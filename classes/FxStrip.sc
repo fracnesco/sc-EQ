@@ -443,7 +443,7 @@ FxStrip {
 
 	// the classes an effect can be made of, by what they are called
 	*effectClasses {
-		var list = [\ParaEQ, \Compressor].collect(_.asClass).reject(_.isNil);
+		var list = [\ParaEQ, \Compressor, \FxRack].collect(_.asClass).reject(_.isNil);
 		\FxParamUnit.asClass !? { |base|
 			list = list ++ base.allSubclasses.reject { |c| c.name.asString.beginsWith("Meta_") }
 				.sort { |a, b| a.name < b.name };
@@ -454,7 +454,8 @@ FxStrip {
 	prRebuild {
 		var items;
 		if (view.isNil or: { view.isClosed }) { ^this };
-		cards = (chain !? (_.units) ? []).collect { |u| FxDeviceCard(u, chain, this) };
+		cards.do(_.remove);
+		cards = (chain !? (_.units) ? []).collect { |u| this.prCardFor(u, chain) };
 		addView = UserView().fixedWidth_(76);
 		addView.drawFunc = { |v|
 			var r = v.bounds.moveTo(0, 0).insetBy(0.5, 0.5);
@@ -473,6 +474,13 @@ FxStrip {
 		view.canvas = canvas;
 	}
 
+	// a rack is a bracket with its chains in it, anything else a card
+	prCardFor { |unit, aChain|
+		^if (unit.respondsTo(\branches) and: { \FxRackCard.asClass.notNil }) {
+			\FxRackCard.asClass.new(unit, aChain, this)
+		} { FxDeviceCard(unit, aChain, this) }
+	}
+
 	prHintAdd {
 		if (hints.notNil and: { addView.notNil }) {
 			hints.attach(addView, "add an effect at the end of the chain - any that is installed");
@@ -480,16 +488,20 @@ FxStrip {
 	}
 
 	// the installed effects under their headings, a submenu each
-	prAddMenu {
+	// `toChain` is a chain inside a rack of this strip; the strip's own otherwise
+	prAddMenu { |toChain|
 		var classes = this.class.effectClasses, groups;
-		if (chain.isNil) { ^this };
+		toChain = toChain ? chain;
+		if (toChain.isNil) { ^this };
+		// a rack only where one may go: not inside a rack that is inside a rack
+		classes = classes.reject { |cls| cls.name == \FxRack and: { toChain.owner !? { |r| r.depth >= 1 } ? false } };
 		groups = this.class.categories.collect { |cat|
 			var mine = classes.select { |cls| this.class.categoryOf(cls) == cat.key };
 			if (mine.notEmpty) {
 				Menu(*mine.collect { |cls|
 					MenuAction((cls.tryPerform(\title) ? cls.name).asString, {
-						var u = chain.add(cls.new);
-						u.enabled = true;
+						var u = toChain.add(cls.new);
+						u !? { u.enabled = true };
 					})
 				}).title_(cat.value)
 			}
@@ -501,5 +513,6 @@ FxStrip {
 		this.running = false;
 		ctrl !? (_.remove);
 		ctrl = nil;
+		cards.do(_.remove);
 	}
 }
