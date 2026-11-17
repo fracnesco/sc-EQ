@@ -432,10 +432,12 @@ ParaEQ : FxUnit {
 	// FxUnit's *mapParams: freq, gain and q of each band - freq1 .. q5, low
 	// to high - then each cut's corner and its switch.
 	*prMapParams {
-		var list = List.new, freq = ControlSpec(minFreq, maxFreq, \exp, 0, 1000, "Hz");
+		// each handle's corner goes back to where the flat eq has it
+		var list = List.new, flat = this.flatSettings;
+		var freq = { |i| ControlSpec(minFreq, maxFreq, \exp, 0, flat[i][0], "Hz") };
 		this.numBands.do { |i|
 			var n = i + 1, section = ("band " ++ n).asSymbol;
-			list.add((key: ("freq" ++ n).asSymbol, label: "freq " ++ n, kind: \knob, spec: freq,
+			list.add((key: ("freq" ++ n).asSymbol, label: "freq " ++ n, kind: \knob, spec: freq.(i),
 				section: section, hero: false));
 			list.add((key: ("gain" ++ n).asSymbol, label: "gain " ++ n, kind: \knob,
 				spec: ControlSpec(dbRange.neg, dbRange, \lin, 0, 0, "dB"), section: section, hero: i == 2));
@@ -443,11 +445,26 @@ ParaEQ : FxUnit {
 				spec: ControlSpec(this.qLo(i), this.qHi, \exp, 0, 1), section: section, hero: false));
 		};
 		[[\lowCut, "low cut", this.highPass], [\highCut, "high cut", this.lowPass]].do { |c|
-			list.add((key: c[0], label: c[1], kind: \knob, spec: freq, section: c[0], hero: true));
+			list.add((key: c[0], label: c[1], kind: \knob, spec: freq.(c[2]), section: c[0], hero: true));
 			list.add((key: (c[0] ++ "On").asSymbol, label: c[1] ++ " in", kind: \toggle,
 				spec: ControlSpec(0, 1, \lin, 1, 0), section: c[0], hero: false));
 		};
 		^list.asArray
+	}
+
+	// a card: the two cuts, each with its switch, around the two shelves
+	*cardKeys {
+		^[(key: \lowCut, switch: \lowCutOn), (key: \gain1, label: "low"),
+			(key: \gain5, label: "high"), (key: \highCut, switch: \highCutOn)]
+	}
+
+	// a cut's corner does nothing while the cut is out
+	*isActive { |key, unit|
+		^switch (key,
+			\lowCut, { unit.cutOn(this.highPass) },
+			\highCut, { unit.cutOn(this.lowPass) },
+			{ true }
+		)
 	}
 
 	// a map key as [part, handle]: \gain3 -> [\gain, 2], \lowCutOn -> [\on, this.highPass]

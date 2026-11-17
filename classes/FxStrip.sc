@@ -9,9 +9,10 @@
 //
 // The sound goes through the cards in the order they stand. A card is its
 // effect at a glance - on or off, its name in its colour, the preset, a small
-// picture of what it is doing, and the few knobs that say most about it (the
-// `hero` ones of its *mapParams). Everything else is in the effect's own
-// window, one click away on the arrow. The dotted card at the end adds an
+// picture of what it is doing, and the few controls that say most about it:
+// the `hero` ones of its *mapParams, or the ones its class names in *cardKeys
+// (see FxDeviceCard). Everything else is in the effect's own window, one click
+// away on the arrow. The dotted card at the end adds an
 // effect; a card's ... menu moves it, takes it out, or picks a preset.
 //
 // FxDeviceCard is one card; FxMapControls makes a widget for any parameter
@@ -25,7 +26,9 @@ FxMapControls {
 	// `e` is one entry of its *mapParams; `thingFunc` answers the thing, so the
 	// widget follows whatever it stands for now (the selected pad). Answers an
 	// Event: (widget:, refresh: { }), refresh putting the thing's value on it.
-	*build { |e, thingFunc, size = \medium, colour|
+	// `stepMenus` makes every menu a knob stepping through its items (a card has
+	// no room for a row of segments).
+	*build { |e, thingFunc, size = \medium, colour, stepMenus = false|
 		var key = e[\key], spec = e[\spec], w, refresh, label = e[\label] ? key.asString;
 		var set = { |v| thingFunc.value !? { |t| t.mapSet(key, v) } };
 		var get = { thingFunc.value !? { |t| t.mapGet(key) } };
@@ -39,7 +42,14 @@ FxMapControls {
 				refresh = { };
 			},
 			\menu, {
-				if (e[\items].size <= 4) {
+				if (stepMenus) {
+					w = FxKnob(label, ControlSpec(0, 1), size, false, colour)
+						.stepNames_(e[\items].collect { |x| this.itemLabel(x) });
+					w.default = spec.default;
+					w.hint = e[\hint] ? "";
+					w.action = { |k| set.(k.mapped.round.asInteger) };
+					refresh = { get.value !? { |v| if (v.isNumber) { w.mapped = v } } };
+				} { if (e[\items].size <= 4) {
 					w = FxSwitch(e[\items].collect { |x| this.itemLabel(x) }, false, nil, label)
 						.action_({ |s| set.(s.value) });
 				} {
@@ -47,6 +57,7 @@ FxMapControls {
 						.action_({ |c| set.(c.value) });
 				};
 				refresh = { get.value !? { |v| w.value = v.round.asInteger } };
+				};
 			},
 			{
 				w = FxKnob(label, spec, size, spec.minval == spec.maxval.neg, colour);
@@ -72,11 +83,30 @@ FxMapControls {
 }
 
 
+// What a card shows, left to right, is its slots. Without *cardKeys they are
+// the first `knobCount` hero knobs of *mapParams and then its hero toggles
+// (freeze, hold) as lit pads. An effect whose heroes do not make a usable card
+// answers *cardKeys, an Array of at most `slotCount` of:
+//
+//   \decay                          one parameter: a knob; a menu steps through
+//                                   its items on a knob; a toggle is a lit pad
+//   [\timeL, \divL]                 one slot, the first of these that does
+//                                   something now (*isActive) - free time or a
+//                                   synced division, a stage's drive or the tone
+//   (key: \lowCut, switch: \lowCutOn)
+//                                   a knob with the switch it depends on as a
+//                                   power button at its left
+//   (key: \gain1, label: "low")     a parameter under another name on the card
+//                                   (also inside a [ ] of alternatives)
+//
+// Whatever is on a card dims while *isActive says it does nothing, so a knob
+// never looks alive when turning it changes nothing.
 FxDeviceCard {
-	classvar <>knobCount = 4;		// how many hero knobs a card shows at most
+	classvar <>knobCount = 4;		// how many hero knobs a card shows when the class does not say
+	classvar <>slotCount = 5;		// the most *cardKeys may ask for
 
 	var <unit, <chain, <strip, <view;
-	var power, nameText, presetText, openBtn, moreBtn, dropBtn, thumb, controls;
+	var power, nameText, presetText, openBtn, moreBtn, dropBtn, thumb, controls, slots;
 
 	asView { ^view }
 
@@ -86,18 +116,73 @@ FxDeviceCard {
 
 	*titleOf { |unit| ^(unit.class.tryPerform(\title) ? unit.class.name).asString }
 
-	init {
-		var colour = this.class.colourOf(unit), heroes, width;
-		heroes = (unit.class.tryPerform(\mapParams) ? []).select { |e| e[\hero] == true and: { (e[\kind] ? \knob) == \knob } }
-			.keep(knobCount);
-		// two knobs of one name (a drive per stage) are told apart by their keys
-		heroes = heroes.collect { |e|
-			if (heroes.count { |x| x[\label] == e[\label] } > 1) {
-				e.copy.put(\label, FxMapControls.itemLabel(e[\key]).replace("1", " 1").replace("2", " 2").replace("3", " 3").replace("4", " 4"))
-			} { e }
+	// whether a parameter does anything with the others as they are
+	*activeOf { |unit, key| ^unit.class.tryPerform(\isActive, key, unit) ? true }
+
+	// the slots of a class: each (alts: [entries of mapParams], switch: entry or nil)
+	*slotsOf { |cls|
+		var params = cls.tryPerform(\mapParams) ? [], list = cls.tryPerform(\cardKeys), labels;
+		// a key, or (key:, label:) for another name on the card
+		var find = { |item|
+			if (item.isKindOf(Dictionary)) {
+				params.detect { |e| e[\key] == item[\key] } !? { |e|
+					if (item[\label].notNil) { e.copy.put(\label, item[\label]) } { e } }
+			} { params.detect { |e| e[\key] == item } }
 		};
-		controls = heroes.collect { |e| FxMapControls.build(e, { unit }, \small, colour) };
-		width = (heroes.size.max(3) * FxKnob.cellWidth(\small)) + 16;
+		var kindOf = { |e| e[\kind] ? \knob };
+		if (list.isNil) {
+			var heroes = params.select { |e| e[\hero] == true };
+			list = heroes.select { |e| kindOf.(e) == \knob }.keep(knobCount).collect { |e| e[\key] }
+				++ heroes.select { |e| kindOf.(e) == \toggle }.keep(2).collect { |e| e[\key] };
+		};
+		list = list.keep(slotCount).collect { |item|
+			case
+			{ item.isKindOf(Symbol) } { (alts: [find.(item)]) }
+			{ item.isKindOf(Dictionary) } { (alts: [find.(item)], switch: item[\switch] !? { |k| find.(k) }) }
+			{ (alts: item.asArray.collect { |k| find.(k) }) }
+		}.select { |slot| slot[\alts].notEmpty and: { slot[\alts].every(_.notNil) } };
+		// two slots of one name (a drive per stage) are told apart by their keys
+		labels = list.collect { |slot| slot[\alts].collect { |e| e[\label] } };
+		^list.collect { |slot, i|
+			slot.copy.put(\alts, slot[\alts].collect { |e|
+				if (labels.select { |l, j| j != i and: { l.includes(e[\label]) } }.notEmpty) {
+					e.copy.put(\label, FxMapControls.itemLabel(e[\key]).replace("1", " 1").replace("2", " 2").replace("3", " 3").replace("4", " 4"))
+				} { e }
+			})
+		}
+	}
+
+	init {
+		var colour = this.class.colourOf(unit), width = 0, cellW = FxKnob.cellWidth(\small), cellH = FxKnob.cellHeight(\small);
+		controls = [];
+		slots = this.class.slotsOf(unit.class).collect { |slot|
+			var made = slot[\alts].collect { |e|
+				if ((e[\kind] ? \knob) == \toggle) {
+					// a lit pad where a knob would be: freeze, hold
+					var pad = FxPad(e[\label], \latch, cellW, cellH - 4).outline_(colour);
+					pad.action = { |p| unit.mapSet(e[\key], p.value.binaryValue) };
+					pad.mapUnitFunc = { unit };
+					pad.mapKey = e[\key];
+					(widget: pad, refresh: { unit.mapGet(e[\key]) !? { |v| pad.value = v > 0.5 } }, key: e[\key], kind: \toggle)
+				} {
+					FxMapControls.build(e, { unit }, \small, colour, true)
+				}
+			};
+			var cell, stack, sw, swView;
+			controls = controls ++ made;
+			if (made.size == 1) { cell = made[0][\widget].view } {
+				stack = StackLayout(*made.collect { |c| c[\widget].view }).mode_(\stackOne);
+				cell = View().fixedSize_(Size(cellW, cellH)).layout_(stack);
+			};
+			slot[\switch] !? { |e|
+				sw = FxPower().action_({ |p| unit.mapSet(e[\key], p.value.binaryValue) });
+				swView = VLayout(View().fixedHeight_(18), sw.view, nil).margins_(0).spacing_(0);
+				width = width + 22;
+			};
+			width = width + cellW;
+			(made: made, stack: stack, cell: cell, switch: sw, switchView: swView, switchEntry: slot[\switch])
+		};
+		width = max(width, 3 * cellW) + 16;
 		power = FxPower().action_({ |p| unit.enabled = p.value });
 		nameText = StaticText().string_(this.class.titleOf(unit)).font_(FxPalette.font).stringColor_(colour);
 		presetText = StaticText().font_(FxPalette.smallFont).stringColor_(FxPalette.dim);
@@ -121,7 +206,8 @@ FxDeviceCard {
 			HLayout(power.view, nameText, [presetText, stretch: 1], openBtn.view, moreBtn.view, dropBtn.view)
 				.margins_(0).spacing_(4),
 			thumb,
-			HLayout(*(controls.collect { |c| c[\widget].view } ++ [nil])).margins_(0).spacing_(0),
+			HLayout(*(slots.collect { |slot| [slot[\switchView], slot[\cell]] }.flat.reject(_.isNil) ++ [nil]))
+				.margins_(0).spacing_(0),
 			nil
 		).margins_([8, 5, 6, 4]).spacing_(4);
 		strip.hints !? { |h| this.hints_(h) };
@@ -137,8 +223,18 @@ FxDeviceCard {
 		bar.attach(thumb, "what % is doing now - double click for its window".format(name));
 		controls.do { |c|
 			var k = c[\widget];
-			k.hints = bar;
-			bar.attach(k.view, { "% %  %".format(name, k.label, k.text) });
+			if (c[\kind] == \toggle) {
+				bar.attach(k.view, "% %: click to latch it, hold for as long as you hold".format(name, k.label));
+			} {
+				k.hints = bar;
+				bar.attach(k.view, { "% %  %%".format(name, k.label, k.text,
+					if (k.inactive) { "   -   does nothing as the effect is set now" } { "" }) });
+			};
+		};
+		slots.do { |slot|
+			slot[\switch] !? { |sw|
+				bar.attach(sw.view, "% %: in or out".format(name, slot[\made][0][\widget].label));
+			};
 		};
 	}
 
@@ -149,7 +245,19 @@ FxDeviceCard {
 		power.value = on;
 		pre = unit.tryPerform(\presetName);
 		presetText.string = (pre ? "").asString;
-		controls.do { |c| c[\refresh].value; c[\widget].muted = on.not };
+		controls.do { |c|
+			c[\refresh].value;
+			c[\widget].muted = on.not;
+			c[\widget].inactive = this.class.activeOf(unit, c[\key]).not;
+		};
+		slots.do { |slot|
+			// a slot of several shows the first that does something now
+			slot[\stack] !? { |stack|
+				var at = slot[\made].detectIndex { |c| this.class.activeOf(unit, c[\key]) } ? 0;
+				if (stack.index != at) { stack.index = at };
+			};
+			slot[\switch] !? { |sw| unit.mapGet(slot[\switchEntry][\key]) !? { |v| sw.value = v > 0.5 } };
+		};
 		thumb.refresh;
 		view.refresh;
 	}

@@ -110,6 +110,16 @@ FxUnit {
 		}
 	}
 	*prMapParams { ^[] }
+
+	// What a small card shows (FxDeviceCard), when the hero knobs alone do not
+	// make a usable one: an Array of keys, of [key, key] where one slot shows
+	// whichever does something now, and of (key:, switch:, label:). nil for the
+	// heroes as they come.
+	*cardKeys { ^nil }
+
+	// whether a parameter does anything with the others as they are: a panel
+	// and a card dim it when not
+	*isActive { |key, unit| ^true }
 	*mapParam { |key| ^this.mapParams.detect { |e| e[\key] == key.asSymbol } }
 	*mapKeys { ^this.mapParams.collect { |e| e[\key] } }
 
