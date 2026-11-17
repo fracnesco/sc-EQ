@@ -223,6 +223,50 @@ FxChain.presetNames;
 The folder is ignored by git, so updating the extension never touches your
 presets.
 
+## Chains side by side: a rack
+
+A rack is an effect whose inside is several chains in parallel. What comes in
+goes to every chain; what comes out of them is added up. It goes in a chain like
+any other effect and is saved with it.
+
+```supercollider
+r = FxChain.master.add(FxRack());        // one chain to begin with: nothing changes
+r.branches[0].name = "squash";
+r.branches[0].chain.add(Compressor()).enabled = true;
+b = r.addBranch("dry");                  // a second chain, empty: the dry sound
+b.level = -6;                            // dB
+r.enabled = true;
+```
+
+An empty chain passes the sound, so every chain you add adds that much level
+until something is in it or its level comes down.
+
+**The chains are lined up in time, and that is the one thing a rack has to get
+right.** A compressor with lookahead, a limiter or an fft cannot help being late;
+each says by how much (`latency`), and the rack holds every other chain back by
+the difference. Without that a dry chain beside a late one combs. Measured: a
+compressor that only delays, against a dry chain turned upside down, leaves
+digital silence at every lookahead tried.
+
+```supercollider
+r.latency;                 // the rack is as late as its latest chain, in seconds
+b.heldBack;                // how long this chain waits for the others
+b.align = false;           // this chain out of it: not held back, nothing waits for it
+r.live = true;             // nothing held back at all: least latency, out of line
+```
+
+When a latency changes - you turn the lookahead, switch an effect - the rack
+waits a quarter of a second for it to settle, then crossfades to the new delays.
+A rack may sit in a chain of another rack, and the outer one lines it up too;
+no deeper than that.
+
+In a strip of cards (`FxStrip`) a rack is a bracket: its chains as a list with
+level, align, mute and solo, and beside it the effects of the chain you click.
+`r.gui` shows every chain with its effects.
+
+A rack only lines up what an effect declares. Compressor declares its lookahead
+to the sample. An effect that is late and says 0 stays out of line.
+
 ## Presets, and a clipboard
 
 Every eq shares one preset list: the ones the library ships and, after them, the
@@ -354,6 +398,9 @@ an Ndef leaves all of that to the Ndef.
 | [classes/ParaEQGUI.sc](classes/ParaEQGUI.sc) | `ParaEQPanel`, header, display, meters and cards as one view, and `ParaEQGUI`, the window |
 | [classes/FxUnit.sc](classes/FxUnit.sc) | what an effect is: driving a node, owning a node, joining a chain, presets, the window hook |
 | [classes/FxChain.sc](classes/FxChain.sc) | a series of effects on a bus, the master chain, chain presets, server lifecycle |
+| [classes/FxRack.sc](classes/FxRack.sc) | `FxRack` and `FxRackBranch`: chains in parallel inside a chain, lined up by their latency |
+| [classes/FxRackGUI.sc](classes/FxRackGUI.sc) | `FxRackCard`, a rack as a bracket in a strip, and `FxRackPanel`, a rack in a window |
+| [classes/FxStrip.sc](classes/FxStrip.sc) | `FxStrip`, a chain as a strip of small cards, `FxDeviceCard`, `FxMapControls` |
 | [classes/FxChainGUI.sc](classes/FxChainGUI.sc) | `FxChainPanel` and `FxChainGUI`: a tab per effect, the one shown with its own panel |
 | [classes/FxPresetStore.sc](classes/FxPresetStore.sc) | named settings: the ones the library ships and yours, on disk |
 | [classes/FxHintBar.sc](classes/FxHintBar.sc) | the strip that says what the mouse is over |
