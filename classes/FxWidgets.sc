@@ -100,6 +100,9 @@ FxKnob {
 	var <>box, <>dec, <>floorText, <>hint = "", <>hints, <>menuItems;
 	var <level, <>levelMirror = false;
 	var <stepNames;		// a knob over a list (a menu's items): it steps, shows ticks and the item
+	var <>interval;		// what an arrow key moves it by - see FxPalette.nudge; nil: worked out from the spec
+	var <keys = false;	// whether it can be selected and moved with the arrow keys
+	var <selected = false;	// it has the keyboard: the arrow keys move this one
 	var dragging = false, startY = 0, startV = 0, lastShift = false, editor;
 	var <>mapUnitFunc, <mapKey, <hasMap = false, <locked = false, <>lockColour;	// see FxMapHooks
 
@@ -133,6 +136,42 @@ FxKnob {
 		view.mouseUpAction = { this.prUp };
 		view.mouseWheelAction = { |v, x, y, mod, xd, yd| this.prWheel(mod, yd) };
 		^this
+	}
+
+	// --------------------------------------------------------- the keys
+
+	// Selected by a click or by tab, the knob moves one interval with an arrow
+	// key: up and right raise it, down and left lower it, shift a tenth as much.
+	keys_ { |bool|
+		keys = bool == true;
+		view.canFocus = keys;
+		if (keys) {
+			view.keyDownAction = { |v, char, mod, uni, keycode, key| this.prKey(mod, key) };
+			view.focusGainedAction = { selected = true; this.refresh; this.prSayHint };
+			view.focusLostAction = { selected = false; this.refresh };
+		} {
+			view.keyDownAction = nil;
+			selected = false;
+		};
+	}
+
+	// one interval up (1) or down (-1)
+	nudge { |dir = 1, fine = false|
+		if (locked) { ^this };
+		this.valueAction = if (stepNames.notNil) {
+			value + (dir / (stepNames.size - 1).max(1))
+		} {
+			spec.unmap(FxPalette.nudge(this.mapped, dir, spec, interval, box, fine))
+		};
+		this.prSayHint;
+	}
+
+	// Qt's codes: left, up, right, down. Any other key goes on to the window
+	prKey { |mod, key|
+		var dir = switch (key, 16r01000013, 1, 16r01000014, 1, 16r01000015, -1, 16r01000012, -1);
+		if (dir.isNil) { ^nil };
+		this.nudge(dir, mod.isShift);
+		^true
 	}
 
 	// ------------------------------------------------------------ value
@@ -189,6 +228,14 @@ FxKnob {
 			{ highlight } { colour }
 			{ true } { FxPalette.dim };
 		var valueColour = if (dragging or: { editor.notNil }) { FxPalette.accent } { FxPalette.text };
+		// selected: the one the arrow keys move
+		if (selected) {
+			Pen.strokeColor = FxPalette.fade(FxPalette.accent, 0.7);
+			Pen.width = 1;
+			Pen.addRoundedRect(Rect(0.5, 0.5, w - 1, view.bounds.height - 1), 4, 4);
+			Pen.stroke;
+			labelColour = FxPalette.text;
+		};
 		Pen.stringCenteredIn(label, Rect(0, 0, w, 14), FxPalette.font, FxPalette.fade(labelColour, a));
 		// the track, then the value along it: from the bottom, or from the top if bipolar
 		Pen.fillColor = FxPalette.fade(FxPalette.control, a);
@@ -250,6 +297,7 @@ FxKnob {
 
 	prDown { |x, y, mod, button, count|
 		if (FxMapHooks.intercept(this, button)) { ^true };
+		if (keys) { view.focus(true) };
 		case
 		{ (button ? 0) == 1 } { this.prMenu }
 		{ locked } { nil }

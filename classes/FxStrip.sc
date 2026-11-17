@@ -63,6 +63,7 @@ FxMapControls {
 				w = FxKnob(label, spec, size, spec.minval == spec.maxval.neg, colour);
 				w.box = e[\box] ?? { if (spec.minval == 0 and: { spec.maxval == 1 } and: { (spec.units ? "").isEmpty }) { \pct } };
 				w.dec = e[\dec];
+				w.interval = e[\interval];
 				w.default = spec.default;
 				w.hint = e[\hint] ? "";
 				w.action = { |k| set.(k.mapped) };
