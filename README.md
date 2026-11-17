@@ -23,11 +23,19 @@ e.highPassOn = true;             // and nothing under 60 Hz
 e.highPassFreq = 60;
 ```
 
-It depends on nothing. Two other extensions of mine are built on it —
-[Compressor](../sc%20compressor) and [ModuleCommon](../module%20common), whose
-pads and slots each own one of these — and [ServerPanel](https://github.com/fracnesco/sc-server-panel)
-grows an `fx` section that opens the master chain when this is installed.
-[BusManager](../sc%20bus%20manager) is optional and lets a bus be named.
+It is built on [FxKit](https://github.com/fracnesco/sc-fx-kit), which every
+effect of mine stands on: `FxUnit`, chains of effects on a bus, racks, the
+knobs and the window frame. The quark and the installer bring it along. The
+eq is one effect among the others; [Compressor](https://github.com/fracnesco/sc-compressor)
+uses it for its sidechain, SuperDirtGUI's mixer and my sample modules for
+their eq, and `FxChain.master` starts with one when this is installed.
+[BusManager](https://github.com/fracnesco/sc-bus-manager) is optional and lets
+a bus be named.
+
+Until November 2026 FxKit's `FxUnit`, `FxChain` and the rest lived here. Update
+both together: with an FxKit from before then the eq has nothing to stand on,
+and an sc EQ from before then next to a new FxKit holds those classes twice.
+The installer says so when it finds either.
 
 Written for SuperCollider 3.13 on macOS. Nothing in it is platform specific
 apart from the symlink in `install.scd`, which Linux shares and Windows does not.
@@ -46,7 +54,7 @@ puts it on the class path; the recompile is what makes the classes exist, and is
 the same thing as `Language -> Recompile Class Library` (ctrl/cmd + shift + L).
 
 The quark goes by the name of the repository, `sc-eq`; the class inside it is
-`ParaEQ`.
+`ParaEQ`. Its manifest names `sc-fx-kit`, so `Quarks` fetches that first.
 
 ### From a clone
 
@@ -57,9 +65,11 @@ things and link it into the extensions folder:
 git clone https://github.com/fracnesco/sc-eq.git
 ```
 
-There is an `install.scd` in the repository that does the linking for you: open
-it and evaluate it, then recompile the class library. It symlinks the folder
-into `Platform.userExtensionDir` as `ParaEQ` and tells you what it did.
+Clone [sc-fx-kit](https://github.com/fracnesco/sc-fx-kit) next to it, into a
+folder called `sc fx kit`. There is an `install.scd` in this repository that
+does the linking for you: open it, evaluate the first block, then recompile the
+class library. It symlinks `sc fx kit` as `FxKit` and this folder as `ParaEQ`
+into `Platform.userExtensionDir`, and tells you what it did.
 
 On Windows there is no `ln -s`, so use the quark, or copy the folder into the
 extensions folder by hand — `Platform.userExtensionDir.openOS` opens it.
@@ -172,100 +182,22 @@ freed, so keep it in a variable (`e.free`).
 
 `enabled` means the same thing in every mode: with a node of its own the node
 exists exactly while the eq is on; driving a graph, the `On` control crossfades
-the filter out. That is the one thing this extension has to get right, and
-everything else — the chain below, the module family's pads — is built on it.
+the filter out. That comes from `FxUnit`, and holds for every effect of the
+family.
 
-## A chain of effects on a bus
-
-`FxChain` is a group on the server with a list of effects inside it, all working
-on one bus one after another. The one everybody wants is the master chain:
+An eq also goes in a chain of effects on a bus, `FxChain`, and in a rack of
+chains side by side, `FxRack`: both are FxKit's, and its
+[README](https://github.com/fracnesco/sc-fx-kit#a-chain-of-effects-on-a-bus)
+says how they work.
 
 ```supercollider
-c = FxChain.master;              // bus 0, one channel per output
-c.units;                         // -> [ParaEQ, Compressor] when Compressor is installed
+c = FxChain.master;              // bus 0: an eq, and a compressor when installed
 c.eq.enabled = true;
 c.eq.preset = \warm;
-c.compressor.threshold = -18;    // nil without the Compressor extension
 c.gui;
 ```
 
-and any bus will do, with any effects, in any order:
 
-```supercollider
-c = FxChain(\verb, bus: 16, numChannels: 2);
-c.add(ParaEQ.new);
-c.add(Compressor.new);
-c.moveUnit(1, 0);
-c.remove(c.units[0]);
-c.enabled = false;               // the whole chain out, whatever each effect says
-```
-
-`c.gui` shows one effect at a time: a tab each, in the order the sound goes
-through them, and under the tabs the effect's own panel, as its own window has it.
-**earlier** and **later** move the one shown along the chain, **remove** takes it
-out; a dim tab is an effect that is off.
-
-The group is built after the default group when the server comes up and again
-after cmd + period, so the chain hears everything that plays, and whatever reads
-the bus at the tail — ServerPanel's meters, a recorder, Insight — hears the chain.
-The server's own volume synth sits before it, so the volume knob is a trim into
-the chain rather than a fader after it. An effect that is off has no node.
-
-A chain writes to one preset file and reads it back effect by effect, so a
-master setting travels as one thing:
-
-```supercollider
-c.savePreset("tonight");         // -> <this repo>/presets/tonight.scd
-c.loadPreset("tonight");
-FxChain.presetNames;
-```
-
-The folder is ignored by git, so updating the extension never touches your
-presets.
-
-## Chains side by side: a rack
-
-A rack is an effect whose inside is several chains in parallel. What comes in
-goes to every chain; what comes out of them is added up. It goes in a chain like
-any other effect and is saved with it.
-
-```supercollider
-r = FxChain.master.add(FxRack());        // one chain to begin with: nothing changes
-r.branches[0].name = "squash";
-r.branches[0].chain.add(Compressor()).enabled = true;
-b = r.addBranch("dry");                  // a second chain, empty: the dry sound
-b.level = -6;                            // dB
-r.enabled = true;
-```
-
-An empty chain passes the sound, so every chain you add adds that much level
-until something is in it or its level comes down.
-
-**The chains are lined up in time, and that is the one thing a rack has to get
-right.** A compressor with lookahead, a limiter or an fft cannot help being late;
-each says by how much (`latency`), and the rack holds every other chain back by
-the difference. Without that a dry chain beside a late one combs. Measured: a
-compressor that only delays, against a dry chain turned upside down, leaves
-digital silence at every lookahead tried.
-
-```supercollider
-r.latency;                 // the rack is as late as its latest chain, in seconds
-b.heldBack;                // how long this chain waits for the others
-b.align = false;           // this chain out of it: not held back, nothing waits for it
-r.live = true;             // nothing held back at all: least latency, out of line
-```
-
-When a latency changes - you turn the lookahead, switch an effect - the rack
-waits a quarter of a second for it to settle, then crossfades to the new delays.
-A rack may sit in a chain of another rack, and the outer one lines it up too;
-no deeper than that.
-
-In a strip of cards (`FxStrip`) a rack is a bracket: its chains as a list with
-level, align, mute and solo, and beside it the effects of the chain you click.
-`r.gui` shows every chain with its effects.
-
-A rack only lines up what an effect declares. Compressor declares its lookahead
-to the sample. An effect that is late and says 0 stays out of line.
 
 ## Presets, and a clipboard
 
@@ -297,7 +229,7 @@ other.copyFrom(e);               // the same without the clipboard
 
 `e.gui`, or the same panel inside another window — the compressor's sidechain
 page, the master chain, a module's eq tab. Every effect window of mine shares one
-frame — the header, a display with the meters at its right, titled cards, the
+frame, FxKit's — the header, a display with the meters at its right, titled cards, the
 same knob, the hint bar along the bottom — and each has its family's face. An
 eq's is one plane you play, and the controls under it reading low to high:
 
@@ -370,6 +302,8 @@ say which — `e.analysisBus = 16`.
 
 Nothing is analysed unless a window is showing it. The **spectrum** switch is a
 class wide one, `ParaEQSpectrum.on`, so it holds across windows and sessions.
+`ParaEQSpectrum` began here and kept its name; it is FxKit's now, and draws
+behind other effects' displays too.
 
 ## The module family
 
@@ -378,15 +312,15 @@ slot and Warper slot's eq *is* one of these — `ModuleEQ` is a `ParaEQ` on the
 slot's own chain — with the same presets, the same clipboard and the same panel
 on the module window's eq tab. Kits and sets store the eq as they always have.
 
-ModuleCommon needs this repository to compile; its installer links this one first
-when it sits next to it.
+ModuleCommon needs this repository and FxKit to compile; its installer links
+them first when they sit next to it.
 
 ## Server restarts
 
-An eq with a node of its own, and every chain, registers with `ServerBoot`,
-`ServerTree` and `ServerQuit`: the defs go up on boot, the nodes are rebuilt with
-the tree after cmd + period, and nothing is talked to after a quit. An eq driving
-an Ndef leaves all of that to the Ndef.
+An eq with a node of its own registers with `ServerBoot`, `ServerTree` and
+`ServerQuit`, as every FxKit effect does: the def goes up on boot, the node is
+rebuilt with the tree after cmd + period, and nothing is talked to after a quit.
+An eq driving an Ndef leaves all of that to the Ndef.
 
 ## Files
 
@@ -394,19 +328,7 @@ an Ndef leaves all of that to the Ndef.
 |------|---------------|
 | [classes/ParaEQ.sc](classes/ParaEQ.sc) | the filter as a UGen, the object that drives it, the bands, presets, clipboard, the curve's maths |
 | [classes/ParaEQView.sc](classes/ParaEQView.sc) | the eq's display: the response, seven dots in their colours, the spectrum behind, the gestures |
-| [classes/ParaEQSpectrum.sc](classes/ParaEQSpectrum.sc) | what the eq is working on: one FFT, read back a frame at a time |
 | [classes/ParaEQGUI.sc](classes/ParaEQGUI.sc) | `ParaEQPanel`, header, display, meters and cards as one view, and `ParaEQGUI`, the window |
-| [classes/FxUnit.sc](classes/FxUnit.sc) | what an effect is: driving a node, owning a node, joining a chain, presets, the window hook |
-| [classes/FxChain.sc](classes/FxChain.sc) | a series of effects on a bus, the master chain, chain presets, server lifecycle |
-| [classes/FxRack.sc](classes/FxRack.sc) | `FxRack` and `FxRackBranch`: chains in parallel inside a chain, lined up by their latency |
-| [classes/FxRackGUI.sc](classes/FxRackGUI.sc) | `FxRackCard`, a rack as a bracket in a strip, and `FxRackPanel`, a rack in a window |
-| [classes/FxStrip.sc](classes/FxStrip.sc) | `FxStrip`, a chain as a strip of small cards, `FxDeviceCard`, `FxMapControls` |
-| [classes/FxChainGUI.sc](classes/FxChainGUI.sc) | `FxChainPanel` and `FxChainGUI`: a tab per effect, the one shown with its own panel |
-| [classes/FxPresetStore.sc](classes/FxPresetStore.sc) | named settings: the ones the library ships and yours, on disk |
-| [classes/FxHintBar.sc](classes/FxHintBar.sc) | the strip that says what the mouse is over |
-| [classes/FxPalette.sc](classes/FxPalette.sc) | the colours and fonts every effect window is drawn in |
-| [classes/FxWidgets.sc](classes/FxWidgets.sc) | the controls every effect window is built from: knob, choice, switch, pad, power, button, card, meter, header |
-| [classes/FxDeviceGUI.sc](classes/FxDeviceGUI.sc) | the window every effect opens in: its panel and the one-line footer |
 | [HelpSource/Classes/](HelpSource/Classes/) | the help files, cmd/ctrl + d on a class name |
 | [examples/paraeq-demo.scd](examples/paraeq-demo.scd) | a walkthrough you can evaluate a block at a time |
 | [install.scd](install.scd) | symlinks the repository into the extensions folder |
