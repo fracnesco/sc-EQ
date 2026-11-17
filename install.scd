@@ -15,52 +15,75 @@
 // ln -s is macOS and Linux. On Windows, use the quark, or copy this
 // folder into Platform.userExtensionDir by hand - .openOS opens it.
 //
-// ParaEQ depends on nothing. Two other repositories are built on it -
-// Compressor (../sc compressor) and ModuleCommon (../module common) -
-// and their installers link this one first when it sits next to them.
-// BusManager, if it happens to be installed, lets a bus be named; and
-// ServerPanel (sc-server-panel) grows an fx section that
-// opens the master chain. Neither is needed to compile.
+// ParaEQ is built on sc fx kit (../sc fx kit), which holds what every
+// effect of the family stands on: FxUnit, chains, racks, the widgets. If it
+// is sitting next to this folder, this script links it as well. Compressor
+// (../sc compressor), ModuleCommon (../module common) and SuperDirtGUI use
+// ParaEQ, and their installers link this one when it sits next to them.
+// BusManager, if it happens to be installed, lets a bus be named.
+//
+// Until 2026-11 that framework lived here. With an sc fx kit from before
+// then, the class library will not compile: update it (git pull) too.
 
 (
-var src = PathName(thisProcess.nowExecutingPath).pathOnly;
-var dst = Platform.userExtensionDir +/+ "ParaEQ";
+var link, src, parent, kit;
 
-// drop the trailing slash, ln -s does not like it
-if (src.endsWith("/")) { src = src.drop(-1) };
+src = PathName(thisProcess.nowExecutingPath).pathOnly;
+if (src.endsWith("/")) { src = src.drop(-1) };			// ln -s dislikes it
+parent = PathName(src).parentPath;
 
-case
-{ File.exists(dst) } {
-	("ParaEQ: % already exists - remove it first if you want to relink."
-		.format(dst)).warn;
-}
-{ true } {
-	File.mkdir(Platform.userExtensionDir);
-	("ln -s" + src.shellQuote + dst.shellQuote).unixCmd({ |exit|
-		if (exit == 0) {
-			"ParaEQ: linked".postln;
-			("   " ++ src).postln;
-			("-> " ++ dst).postln;
-			"".postln;
-			"Now recompile the class library: ctrl/cmd + shift + L".postln;
-		} {
-			("ParaEQ: linking failed with exit code" + exit).warn;
-		};
-	});
+link = { |from, to, what, done|
+	if (from.endsWith("/")) { from = from.drop(-1) };
+	case
+	{ File.exists(to) } {
+		("ParaEQ: % is already installed at %.".format(what, to)).postln;
+		done.value;
+	}
+	{ File.exists(from).not } {
+		("ParaEQ: % is not installed, and there is no copy of it at %."
+			"\n  The class library will not compile without it."
+			"\n  Install it first, then run this again."
+			.format(what, from)).warn;
+	}
+	{ true } {
+		File.mkdir(Platform.userExtensionDir);
+		("ln -s" + from.shellQuote + to.shellQuote).unixCmd({ |exit|
+			if (exit == 0) {
+				"ParaEQ: linked % -> %".format(what, to).postln;
+				done.value;
+			} {
+				"ParaEQ: linking % failed with exit code %".format(what, exit).warn;
+			};
+		});
+	};
 };
+
+// an sc fx kit from before the move has no FxUnit: ParaEQ would have no base
+kit = [Platform.userExtensionDir +/+ "FxKit", parent +/+ "sc fx kit"].detect { |d| File.exists(d) };
+if (kit.notNil and: { File.exists(kit +/+ "classes/FxUnit.sc").not }) {
+	("ParaEQ: % is an older sc fx kit, from before the framework moved into it."
+		"\n  Update it (git pull), or ParaEQ has no FxUnit to stand on.".format(kit)).warn;
+};
+
+link.value(parent +/+ "sc fx kit", Platform.userExtensionDir +/+ "FxKit", "FxKit", {
+	link.value(src, Platform.userExtensionDir +/+ "ParaEQ", "ParaEQ", {
+		"".postln;
+		"Now recompile the class library: ctrl/cmd + shift + L".postln;
+	});
+});
 )
 
 
 // ---------------------------------------------------------------- verify
 (
-var missing = [\ParaEQ, \ParaEQView, \ParaEQSpectrum, \ParaEQPanel, \ParaEQGUI,
-	\FxUnit, \FxChain, \FxChainPanel, \FxChainGUI, \FxPresetStore, \FxPalette, \FxHintBar]
+var missing = [\ParaEQ, \ParaEQView, \ParaEQPanel, \ParaEQGUI, \FxUnit]
 	.select { |sym| sym.asClass.isNil };
 
 if (missing.notEmpty) {
 	("ParaEQ is not compiled - % is missing."
 		"\n  Recompile the class library, ctrl/cmd + shift + L, and check the"
-		"\n  post window for compile errors.".format(missing.join(", "))).warn;
+		"\n  post window for compile errors - a missing or old sc fx kit is the"
+		"\n  usual reason.".format(missing.join(", "))).warn;
 } {
 	"ParaEQ is installed.".postln;
 	"  presets: % - %".format(ParaEQ.presetNames.size, ParaEQ.presetNames.join(", ")).postln;
